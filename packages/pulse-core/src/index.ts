@@ -14,6 +14,8 @@ export type PaymentEventType =
 export type AccountOptionsEventType = "account.options_changed";
 /** Event type for account creation. */
 export type AccountEventType = "account.created";
+export type ClaimableCreatedEventType = "claimable.created";
+export type ClaimableClaimedEventType = "claimable.claimed";
 /** Event types for trustline lifecycle events (added, removed, or limit updated). */
 export type TrustlineEventType =
   | "trustline.added"
@@ -120,6 +122,30 @@ export type BumpSequenceEvent = {
   raw: unknown;
 };
 
+export type ClaimableBalanceClaimant = {
+  destination: string;
+  predicate: unknown;
+};
+
+export type ClaimableCreatedEvent = {
+  type: ClaimableCreatedEventType;
+  sponsor: string;
+  balanceId: string;
+  claimants: ClaimableBalanceClaimant[];
+  asset: string;
+  amount: string;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type ClaimableClaimedEvent = {
+  type: ClaimableClaimedEventType;
+  claimant: string;
+  balanceId: string;
+  timestamp: string;
+  raw: unknown;
+};
+
 export type DataEvent = {
   type: DataEventType;
   source: string;
@@ -192,7 +218,9 @@ export type NormalizedEvent =
   | AccountMergeEvent
   | OfferEvent
   | BumpSequenceEvent
-  | DataEvent;
+  | DataEvent
+  | ClaimableCreatedEvent
+  | ClaimableClaimedEvent;
 
 /**
  * A notification emitted by the EventEngine during reconnection attempts.

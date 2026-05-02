@@ -8,6 +8,9 @@ import type {
   AccountOptionsEvent,
   BumpSequenceEvent,
   BumpSequenceEventType,
+  ClaimableBalanceClaimant,
+  ClaimableClaimedEvent,
+  ClaimableCreatedEvent,
   CoreConfig,
   DataEvent,
   DataEventType,
@@ -36,7 +39,9 @@ type NormalizedEventOrPending =
   | AccountMergeEvent
   | OfferEvent
   | BumpSequenceEvent
-  | DataEvent;
+  | DataEvent
+  | ClaimableCreatedEvent
+  | ClaimableClaimedEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -458,6 +463,14 @@ export class EventEngine {
       };
     }
 
+    if (r.type === "create_claimable_balance") {
+      return this.normalizeCreateClaimableBalance(r, record);
+    }
+
+    if (r.type === "claim_claimable_balance") {
+      return this.normalizeClaimClaimableBalance(r, record);
+    }
+
     return null;
   }
 
@@ -661,6 +674,94 @@ export class EventEngine {
     };
   }
 
+  private normalizeCreateClaimableBalance(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): ClaimableCreatedEvent | null {
+    const requiredStringFields = [
+      "source_account",
+      "created_at",
+      "amount",
+      "balance_id",
+    ] as const;
+
+    for (const field of requiredStringFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn(
+          `[pulse-core] normalize() dropping create_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
+          { record: raw }
+        );
+        return null;
+      }
+    }
+
+    if (
+      !Array.isArray(r.claimants) ||
+      r.claimants.length === 0 ||
+      !r.claimants.every(
+        (c: unknown) =>
+          typeof c === "object" &&
+          c !== null &&
+          typeof (c as Record<string, unknown>).destination === "string" &&
+          (c as Record<string, unknown>).destination !== ""
+      )
+    ) {
+      this.log.warn(
+        '[pulse-core] normalize() dropping create_claimable_balance record: field "claimants" is missing or invalid.',
+        { record: raw }
+      );
+      return null;
+    }
+
+    const asset =
+      r.asset_type === "native"
+        ? "XLM"
+        : `${r.asset_code}:${r.asset_issuer}`;
+
+    return {
+      type: "claimable.created",
+      sponsor: r.source_account as string,
+      balanceId: r.balance_id as string,
+      claimants: (r.claimants as Array<Record<string, unknown>>).map((c) => ({
+        destination: c.destination as string,
+        predicate: c.predicate,
+      })),
+      asset,
+      amount: r.amount as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
+  private normalizeClaimClaimableBalance(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): ClaimableClaimedEvent | null {
+    const requiredStringFields = [
+      "source_account",
+      "created_at",
+      "balance_id",
+    ] as const;
+
+    for (const field of requiredStringFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn(
+          `[pulse-core] normalize() dropping claim_claimable_balance record: field "${field}" is missing or not a non-empty string.`,
+          { record: raw }
+        );
+        return null;
+      }
+    }
+
+    return {
+      type: "claimable.claimed",
+      claimant: r.source_account as string,
+      balanceId: r.balance_id as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
   private passesFilter(address: string, event: NormalizedEvent): boolean {
     const filter = this.filters.get(address);
     if (!filter) return true;
@@ -755,6 +856,37 @@ export class EventEngine {
       const watcher = this.registry.get(event.source);
       if (watcher && this.passesFilter(event.source, event)) {
         watcher.emit(event.type, event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "claimable.created") {
+      const notified = new Set<string>();
+
+      for (const claimant of event.claimants) {
+        const watcher = this.registry.get(claimant.destination);
+        if (watcher && !notified.has(claimant.destination) && this.passesFilter(claimant.destination, event)) {
+          notified.add(claimant.destination);
+          watcher.emit("claimable.created", event);
+          watcher.emit("*", event);
+        }
+      }
+
+      if (!notified.has(event.sponsor)) {
+        const sponsorWatcher = this.registry.get(event.sponsor);
+        if (sponsorWatcher && this.passesFilter(event.sponsor, event)) {
+          sponsorWatcher.emit("claimable.created", event);
+          sponsorWatcher.emit("*", event);
+        }
+      }
+      return;
+    }
+
+    if (event.type === "claimable.claimed") {
+      const watcher = this.registry.get(event.claimant);
+      if (watcher && this.passesFilter(event.claimant, event)) {
+        watcher.emit("claimable.claimed", event);
         watcher.emit("*", event);
       }
       return;
