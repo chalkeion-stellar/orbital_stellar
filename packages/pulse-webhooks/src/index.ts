@@ -9,8 +9,6 @@ type ResolvedWebhookConfig = Omit<Required<WebhookConfig>, "url"> & {
   urls: string[];
 };
 
-// --- WebhookDelivery ---
-
 export class WebhookDelivery {
   private config: ResolvedWebhookConfig;
   private watcher: Watcher;
@@ -140,8 +138,6 @@ export class WebhookDelivery {
       .digest("hex");
   }
 }
-
-// --- verifyWebhook ---
 
 export function verifyWebhook(
   payload: string,

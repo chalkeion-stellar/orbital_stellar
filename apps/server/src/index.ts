@@ -7,8 +7,6 @@ import { createRoutes } from "./routes.js";
 import { config } from "./config.js";
 import { logger } from "./logger.js";
 
-// --- Bootstrap ---
-
 const activeSSEConnections = new Set<Response>();
 
 const engine = new EventEngine({ network: config.NETWORK, logger });
@@ -44,8 +42,6 @@ app.get("/health", (_req: Request, res: Response) => {
 const server = app.listen(config.PORT, () => {
   logger.info({ port: config.PORT }, "Listening");
 });
-
-// --- Graceful shutdown ---
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 

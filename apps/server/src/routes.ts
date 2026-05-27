@@ -4,8 +4,6 @@ import type { WebhookRegistry } from "./registry.js";
 import { requireApiKey } from "./auth.js";
 import { sendProblem } from "./errors.js";
 
-// --- SSRF-safe URL validation ---
-
 const PRIVATE_IP_RE = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
 
 function validateWebhookUrl(raw: string): string | null {
@@ -32,8 +30,6 @@ function validateWebhookUrl(raw: string): string | null {
   return null; // valid
 }
 
-// --- Routes ---
-
 export function createRoutes(registry: WebhookRegistry, engine: EventEngine, activeSSEConnections: Set<Response>): Router {
   const router = Router();
 
@@ -54,13 +50,11 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine, act
       return;
     }
 
-    // Validate Stellar public key
     if (!StrKey.isValidEd25519PublicKey(address)) {
       sendProblem(res, 400, "Invalid Stellar Key", "address must be a valid Stellar public key");
       return;
     }
 
-    // Validate webhook URL (HTTPS, no SSRF)
     const urlError = validateWebhookUrl(url);
     if (urlError) {
       sendProblem(res, 400, "Invalid Webhook URL", urlError);
@@ -89,7 +83,6 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine, act
     res.status(200).json({ message: `Unregistered ${address}` });
   });
 
-  // List all registrations — secrets are never included
   router.get("/webhooks", (_req: Request, res: Response) => {
     res.status(200).json(registry.list());
   });
@@ -101,7 +94,6 @@ export function createRoutes(registry: WebhookRegistry, engine: EventEngine, act
       sendProblem(res, 404, "Not Found", `Address ${address} is not registered`);
       return;
     }
-    // list() already strips secrets; find the one entry
     const entry = registry.list().find((r) => r.address === address);
     res.status(200).json(entry);
   });

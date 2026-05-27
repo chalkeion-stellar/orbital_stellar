@@ -1,4 +1,3 @@
-// packages/pulse-core/src/Watcher.ts
 import { EventEmitter } from "events";
 import type { NormalizedEvent, WatcherNotification } from "./index.js";
 

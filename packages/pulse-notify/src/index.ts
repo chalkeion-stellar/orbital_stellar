@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
 import type { NormalizedEvent } from "@orbital/pulse-core";
 
-// --- Types ---
-
 export type UseEventConfig = {
   serverUrl: string;
   address: string;
@@ -16,15 +14,6 @@ export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
   connected: boolean;
   error: string | null;
 };
-
-// --- useStellarEvent ---
-// Core hook — two call signatures:
-//
-//   useStellarEvent(config: UseEventConfig)
-//   useStellarEvent(serverUrl, address, options?)
-//
-// Prefer the primitives-first overload when writing inline call sites —
-// it is stable by construction and never needs useMemo.
 
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   config: UseEventConfig
@@ -114,9 +103,6 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   return state;
 }
 
-// --- useStellarPayment ---
-// Convenience hook — only listens to payment events
-
 export function useStellarPayment(serverUrl: string, address: string) {
   return useStellarEvent<Extract<NormalizedEvent, { type: "payment.received" }>>(
     serverUrl,
@@ -124,9 +110,6 @@ export function useStellarPayment(serverUrl: string, address: string) {
     { event: "payment.received" }
   );
 }
-
-// --- useStellarActivity ---
-// Convenience hook — listens to all events on an address
 
 export function useStellarActivity(serverUrl: string, address: string) {
   return useStellarEvent(serverUrl, address, { event: "*" });

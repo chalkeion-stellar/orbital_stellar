@@ -221,8 +221,6 @@ export class EventEngine {
     this.closeStream();
     this.clearReconnectTimer();
     this.isRunning = true;
-    // Capture the current attempt number for the reconnect success notification.
-    // This value matches the attempt number emitted in engine.reconnecting.
     this.pendingReconnectSuccessAttempt = isReconnect
       ? this.reconnectAttempt
       : null;
@@ -300,8 +298,6 @@ export class EventEngine {
       );
       delayMs = Math.floor(Math.random() * exponentialDelay);
 
-      // Log and emit the attempt number that will be used for this reconnect cycle.
-      // This same number will appear in the engine.reconnected notification if successful.
       this.log.warn(`[pulse-core] SSE reconnect attempt ${nextAttempt} scheduled in ${delayMs}ms.`);
       this.notifyWatchers("engine.reconnecting", {
         type: "engine.reconnecting",
@@ -705,9 +701,8 @@ export class EventEngine {
       changes.home_domain = r.home_domain;
     }
 
-    // Known gap: set_flags, clear_flags, and inflation_dest are not tracked in `changes`.
-    // Operations that only modify those fields are intentionally dropped here as no-ops.
-    // TODO: track flag/inflation changes in a follow-up (see issue #XX).
+    // set_flags, clear_flags, and inflation_dest are intentionally not tracked — operations
+    // that only modify those fields are dropped as no-ops.
     if (Object.keys(changes).length === 0) return null;
 
     return {
