@@ -1,0 +1,68 @@
+{
+  "projectName": "orbital_stellar",
+  "projectOwner": "determined-001",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": true,
+  "commitConvention": "angular",
+  "commitType": "docs",
+  "contributorsPerLine": 7,
+  "skipCi": true,
+  "contributors": [
+    {
+      "login": "determined-001",
+      "name": "determined-001",
+      "avatar_url": "https://github.com/determined-001.png?size=100",
+      "profile": "https://github.com/determined-001",
+      "contributions": [
+        "code",
+        "doc",
+        "infra",
+        "maintenance",
+        "projectManagement",
+        "review",
+        "test"
+      ]
+    },
+    {
+      "login": "Trovicdev",
+      "name": "Trovicdev",
+      "avatar_url": "https://github.com/Trovicdev.png?size=100",
+      "profile": "https://github.com/Trovicdev",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "Praxhant97",
+      "name": "Praxhant97",
+      "avatar_url": "https://github.com/Praxhant97.png?size=100",
+      "profile": "https://github.com/Praxhant97",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "Chrisbankz0",
+      "name": "Christopher Umechukwu",
+      "avatar_url": "https://github.com/Chrisbankz0.png?size=100",
+      "profile": "https://github.com/Chrisbankz0",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "3m1n3nc3",
+      "name": "Legacy",
+      "avatar_url": "https://github.com/3m1n3nc3.png?size=100",
+      "profile": "https://github.com/3m1n3nc3",
+      "contributions": [
+        "code"
+      ]
+    }
+  ]
+}
