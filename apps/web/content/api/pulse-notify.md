@@ -118,13 +118,13 @@ Multiple hook instances with the same `(serverUrl, address, eventKey)` arguments
 
 ## useStellarPayment
 
-Convenience hook — only updates on `payment.received` events. Equivalent to `useStellarEvent(serverUrl, address, { event: "payment.received" })`.
+Convenience hook — only updates on `payment.received` events. Returns all fields from `useStellarEvent` plus a pre-computed `amountStroop` field so you never have to convert manually.
 
 ```tsx
 import { useStellarPayment } from "@orbital/pulse-notify";
 
 function IncomingPayments({ address }: { address: string }) {
-  const { event, connected } = useStellarPayment(
+  const { event, amountStroop, connected } = useStellarPayment(
     process.env.NEXT_PUBLIC_ORBITAL_URL!,
     address,
   );
@@ -135,12 +135,33 @@ function IncomingPayments({ address }: { address: string }) {
         {connected ? "Live" : "Connecting..."}
       </span>
       {event && (
-        <p>+{event.amount} {event.asset} from {event.from.slice(0, 8)}...</p>
+        <p>
+          +{event.amount} {event.asset} from {event.from.slice(0, 8)}...
+          <br />
+          <small>({amountStroop?.toString()} stroops)</small>
+        </p>
       )}
     </div>
   );
 }
 ```
+
+### Return value
+
+`useStellarPayment` returns `PaymentState`, which extends `EventState` with one extra field:
+
+```ts
+type PaymentState = EventState<PaymentEvent> & {
+  amountStroop: bigint | null; // null until the first event arrives
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `event` | `PaymentEvent \| null` | Latest `payment.received` event |
+| `connected` | `boolean` | `true` once the SSE handshake completes |
+| `error` | `string \| null` | Error message if the connection fails |
+| `amountStroop` | `bigint \| null` | `event.amount` converted to stroops (1 XLM = 10,000,000 stroops). Computed without floating-point arithmetic. `null` until the first event arrives. |
 
 ## useStellarActivity
 

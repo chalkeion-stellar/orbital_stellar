@@ -104,12 +104,61 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   return state;
 }
 
-export function useStellarPayment(serverUrl: string, address: string) {
-  return useStellarEvent<Extract<NormalizedEvent, { type: "payment.received" }>>(
-    serverUrl,
-    address,
-    { event: "payment.received" }
-  );
+export type PaymentState = EventState<
+  Extract<NormalizedEvent, { type: "payment.received" }>
+> & {
+  /**
+   * The payment amount expressed in stroops (1 XLM = 10,000,000 stroops) as a
+   * `bigint`, or `null` when no event has arrived yet.
+   *
+   * Computed from `event.amount` without floating-point arithmetic so it is
+   * safe for all amounts representable on the Stellar network.
+   *
+   * @example
+   * const { amountStroop } = useStellarPayment(serverUrl, address);
+   * if (amountStroop !== null) {
+   *   console.log(`Received ${amountStroop} stroops`);
+   * }
+   */
+  amountStroop: bigint | null;
+};
+
+/**
+ * Converts a Stellar decimal amount string (e.g. "12.3456789") to stroops
+ * (integer, 7 decimal places) as a bigint.
+ *
+ * Avoids floating-point arithmetic by splitting on "." and padding/truncating
+ * the fractional part to exactly 7 digits before combining.
+ *
+ * Returns `null` if the string is not a valid non-negative decimal number.
+ */
+function amountToStroop(amount: string): bigint | null {
+  // Accept only strings that look like a non-negative decimal number.
+  if (!/^\d+(\.\d+)?$/.test(amount)) return null;
+
+  const [whole, frac = ""] = amount.split(".");
+  // Pad or truncate the fractional part to exactly 7 digits.
+  const fracPadded = frac.slice(0, 7).padEnd(7, "0");
+
+  try {
+    return BigInt(whole) * 10_000_000n + BigInt(fracPadded);
+  } catch {
+    return null;
+  }
+}
+
+export function useStellarPayment(
+  serverUrl: string,
+  address: string
+): PaymentState {
+  const state = useStellarEvent<
+    Extract<NormalizedEvent, { type: "payment.received" }>
+  >(serverUrl, address, { event: "payment.received" });
+
+  const amountStroop =
+    state.event !== null ? amountToStroop(state.event.amount) : null;
+
+  return { ...state, amountStroop };
 }
 
 export function useStellarActivity(serverUrl: string, address: string) {
