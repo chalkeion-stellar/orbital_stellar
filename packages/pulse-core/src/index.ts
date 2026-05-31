@@ -1,3 +1,5 @@
+export { SorobanRpcClient } from "./SorobanRpcClient.js";
+export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
