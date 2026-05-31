@@ -18,7 +18,6 @@ import type {
   RawHorizonAllowTrust,
   RawHorizonSetTrustLineFlags,
   RawSorobanEvent,
-  RawHorizonContractEmitted,
 } from "../src/index.js";
 
 type StreamHandlers = {
