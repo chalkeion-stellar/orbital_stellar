@@ -315,6 +315,12 @@ export type ReconnectConfig = {
  *   reconnect: { initialDelayMs: 2000, maxRetries: 5 }
  * };
  */
+export interface Logger {
+  info(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+}
+
 export type CoreConfig = {
   /** The Stellar network to connect to. */
   network: Network;
@@ -322,11 +328,7 @@ export type CoreConfig = {
   horizonUrl?: string;
   /** Optional reconnection configuration. */
   reconnect?: ReconnectConfig;
-  logger?: {
-    info(msg: string, ...args: unknown[]): void;
-    warn(msg: string, ...args: unknown[]): void;
-    error(msg: string, ...args: unknown[]): void;
-  };
+  logger?: Logger;
 };
 
 // Error class for invalid network validation
