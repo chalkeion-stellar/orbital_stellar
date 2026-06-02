@@ -4,13 +4,36 @@ export { EventEngine } from "./EventEngine.js";
 export { SorobanSubscriber } from "./SorobanSubscriber.js";
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
+export { SorobanSubscriber } from "./SorobanSubscriber.js";
+export type {
+  SorobanSubscriberOptions,
+  SorobanRpc,
+  SorobanEvent,
+  CursorStore as SorobanCursorStore,
+} from "./SorobanSubscriber.js";
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
 export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
 export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
-export { isEventType } from "./eventTypeGuard.js";
+export {
+  isAccountAddress,
+  isMuxedAddress,
+  isContractAddress,
+  isStellarAddress,
+  toAccountAddress,
+  toMuxedAddress,
+  toContractAddress,
+} from "./address.js";
+export type {
+  AccountAddress,
+  MuxedAddress,
+  ContractAddress,
+  StellarAddress,
+} from "./address.js";
+
+import type { AccountAddress, ContractAddress, MuxedAddress } from "./address.js";
 
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
@@ -76,7 +99,7 @@ export type DataEventType = "data.set" | "data.cleared";
  */
 export type SetOptionsSigner = {
   /** The public key of the signer. */
-  key: string;
+  key: AccountAddress;
   /** The weight of the signer for multi-signature transactions. */
   weight: number;
 };
@@ -111,9 +134,9 @@ export type PaymentEvent = {
   /** The type of payment event (received or sent). */
   type: PaymentEventType;
   /** The destination address of the payment. */
-  to: string;
+  to: AccountAddress | MuxedAddress;
   /** The source address of the payment. */
-  from: string;
+  from: AccountAddress | MuxedAddress;
   /** The amount of the payment as a string. */
   amount: string;
   /** The asset being transferred (e.g., "XLM" or "ASSET:issuer"). */
@@ -131,7 +154,7 @@ export type AccountOptionsEvent = {
   /** The type of account options event. */
   type: AccountOptionsEventType;
   /** The Stellar account whose options changed. */
-  source: string;
+  source: AccountAddress;
   /** The specific changes made to the account options. */
   changes: AccountOptionsChanges;
   /** ISO 8601 timestamp of the options change. */
@@ -143,7 +166,7 @@ export type AccountOptionsEvent = {
 export type OfferEvent = {
   type: OfferEventType;
   offer_id: string;
-  source: string;
+  source: AccountAddress;
   buying_asset: string;
   selling_asset: string;
   amount: string;
@@ -154,20 +177,20 @@ export type OfferEvent = {
 
 export type BumpSequenceEvent = {
   type: BumpSequenceEventType;
-  source: string;
+  source: AccountAddress;
   bump_to: string;
   timestamp: string;
   raw: unknown;
 };
 
 export type ClaimableBalanceClaimant = {
-  destination: string;
+  destination: AccountAddress;
   predicate: unknown;
 };
 
 export type ClaimableCreatedEvent = {
   type: ClaimableCreatedEventType;
-  sponsor: string;
+  sponsor: AccountAddress;
   balanceId: string;
   claimants: ClaimableBalanceClaimant[];
   asset: string;
@@ -178,7 +201,7 @@ export type ClaimableCreatedEvent = {
 
 export type ClaimableClaimedEvent = {
   type: ClaimableClaimedEventType;
-  claimant: string;
+  claimant: AccountAddress;
   balanceId: string;
   timestamp: string;
   raw: unknown;
@@ -186,7 +209,7 @@ export type ClaimableClaimedEvent = {
 
 export type DataEvent = {
   type: DataEventType;
-  source: string;
+  source: AccountAddress;
   name: string;
   value: string | null;
   timestamp: string;
@@ -200,7 +223,7 @@ export type LiquidityPoolReserve = {
 
 export type LiquidityPoolDepositEvent = {
   type: "lp.deposited";
-  source: string;
+  source: AccountAddress;
   pool_id: string;
   reserves_deposited: LiquidityPoolReserve[];
   shares_received: string;
@@ -210,7 +233,7 @@ export type LiquidityPoolDepositEvent = {
 
 export type LiquidityPoolWithdrawEvent = {
   type: "lp.withdrawn";
-  source: string;
+  source: AccountAddress;
   pool_id: string;
   reserves_received: LiquidityPoolReserve[];
   shares_redeemed: string;
@@ -220,8 +243,8 @@ export type LiquidityPoolWithdrawEvent = {
 
 export type TrustAuthEvent = {
   type: TrustAuthEventType;
-  trustor: string;
-  issuer: string;
+  trustor: AccountAddress;
+  issuer: AccountAddress;
   asset: string;
   timestamp: string;
   /** The original Horizon operation type ("allow_trust" or "set_trust_line_flags"). */
@@ -236,9 +259,9 @@ export type AccountCreatedEvent = {
   /** The type of account creation event. */
   type: AccountEventType;
   /** The Stellar account that funded the new account. */
-  funder: string;
+  funder: AccountAddress;
   /** The newly created Stellar account address. */
-  account: string;
+  account: AccountAddress;
   /** The starting balance transferred to the new account. */
   starting_balance: string;
   /** ISO 8601 timestamp of the account creation. */
@@ -254,7 +277,7 @@ export type TrustlineEvent = {
   /** The type of trustline event (added, removed, or updated). */
   type: TrustlineEventType;
   /** The Stellar account whose trustline changed. */
-  account: string;
+  account: AccountAddress;
   /** The asset for the trustline (e.g., "USDC:GISSUER" or "XLM"). */
   asset: string;
   /** The trustline limit as a string (Horizon scaled int64). */
@@ -272,9 +295,9 @@ export type AccountMergeEvent = {
   /** The type of account merge event. */
   type: AccountMergeEventType;
   /** The Stellar account that was merged into another. */
-  source: string;
+  source: AccountAddress;
   /** The Stellar account that received the merged balance. */
-  destination: string;
+  destination: AccountAddress;
   /** ISO 8601 timestamp of the merge. */
   timestamp: string;
   /** The original raw record from the Horizon API. */
@@ -415,7 +438,7 @@ export type ContractEventType = "contract.invoked" | "contract.emitted";
  */
 export type ContractInvokedEvent = {
   type: "contract.invoked";
-  contractId: string;
+  contractId: ContractAddress;
   /** The function name that was invoked. */
   function: string;
   /** Ordered list of topic strings (XDR-encoded or decoded). */
@@ -431,7 +454,7 @@ export type ContractInvokedEvent = {
  */
 export type ContractEmittedEvent = {
   type: "contract.emitted";
-  contractId: string;
+  contractId: ContractAddress;
   /** Ordered list of topic strings (XDR-encoded or decoded). */
   topics: string[];
   /** Arbitrary event data payload. */
@@ -454,7 +477,7 @@ export type ContractSubscriptionFilter = {
    * Match only events from one of these contract IDs.
    * Omit to match any contract.
    */
-  contractIds?: string[];
+  contractIds?: ContractAddress[];
   /**
    * Topic-pattern match: each entry is matched positionally against the event's
    * topics array. Use `null` as a wildcard for a position.
