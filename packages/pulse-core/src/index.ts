@@ -1,4 +1,8 @@
+export { SorobanRpcClient } from "./SorobanRpcClient.js";
+export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
+export { SorobanSubscriber } from "./SorobanSubscriber.js";
+export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
 export { SorobanSubscriber } from "./SorobanSubscriber.js";
 export type {
@@ -13,9 +17,28 @@ export { CursorStore } from "./CursorStore.js";
 export { PostgresCursorStore, PgLike } from "./PostgresCursorStore.js";
 export { evaluatePredicate, normalizeClaimPredicate, isClaimPredicateType } from "./claimPredicate.js";
 export type { ClaimPredicate } from "./claimPredicate.js";
+export { isEventType } from "./eventTypeGuard.js";
 
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
+
+export type SourceStatus = {
+  running: boolean;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  cursor?: string;
+};
+
+export type EngineStatus = {
+  running: boolean;
+  watcherCount: number;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  sources: {
+    horizon: SourceStatus;
+    soroban: SourceStatus;
+  };
+};
 
 /** Passphrase strings for each supported Stellar network. */
 export const NETWORK_PASSPHRASES = {
@@ -48,7 +71,8 @@ export type WatcherNotificationType =
   | "engine.reconnecting"
   | "engine.reconnected"
   | "engine.rate_limited"
-  | "engine.stopped";
+  | "engine.stopped"
+  | "engine.cursor_store_unhealthy";
 
 export type OfferEventType = "offer.created" | "offer.updated" | "offer.deleted";
 export type BumpSequenceEventType = "account.bump_sequence";
@@ -295,6 +319,8 @@ export type NormalizedEvent =
 export type WatcherNotification = {
   /** The type of reconnection notification. */
   type: WatcherNotificationType;
+  /** Human-friendly label of the subscription that received this notification, if one was set. */
+  name?: string;
   /** The current reconnection attempt number. */
   attempt: number;
   /** The delay in milliseconds before the next reconnection attempt (for "engine.reconnecting" events). */
@@ -338,6 +364,12 @@ export type CoreConfig = {
   /** Optional reconnection configuration. */
   reconnect?: ReconnectConfig;
   logger?: Logger;
+  /** Optional cursor store for resumable streams. */
+  cursorStore?: CursorStore;
+  /** Key to use for cursor storage. Defaults to "pulse-core-cursor". */
+  streamKey?: string;
+  /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
+  cursorFailureThreshold?: number;
 };
 
 // Error class for invalid network validation
@@ -352,8 +384,10 @@ export class UnknownNetworkError extends Error {
 export type EngineStatus = {
   running: boolean;
   watcherCount: number;
+  contractWatcherCount?: number;
   lastEventAt: string | null;
   reconnectAttempt: number;
+  pausedSources?: ("horizon" | "soroban")[];
 };
 
 export type HealthCheckResult = {
@@ -366,6 +400,8 @@ export type SubscribeOptions = {
    *  Return `false` to suppress delivery. If the predicate throws, the event
    *  is suppressed and a warning is logged — the engine continues running. */
   filter?: (event: NormalizedEvent) => boolean;
+  /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
+  name?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -433,4 +469,6 @@ export type ContractSubscriptionFilter = {
 /** Options for subscribeContract(). */
 export type ContractSubscribeOptions = {
   filters?: ContractSubscriptionFilter[];
+  /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
+  name?: string;
 };
