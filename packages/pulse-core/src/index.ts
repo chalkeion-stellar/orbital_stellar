@@ -1,10 +1,10 @@
+import { CursorStore } from "./CursorStore.js";
 export { SorobanRpcClient } from "./SorobanRpcClient.js";
 export type { SorobanRpcClientOptions } from "./SorobanRpcClient.js";
 export { EventEngine } from "./EventEngine.js";
 export { SorobanSubscriber } from "./SorobanSubscriber.js";
 export { validateContractFilters } from "./contractFilters.js";
 export { Watcher } from "./Watcher.js";
-export { SorobanSubscriber } from "./SorobanSubscriber.js";
 export type {
   SorobanSubscriberOptions,
   SorobanRpc,
@@ -52,7 +52,9 @@ export type EngineStatus = {
   running: boolean;
   watcherCount: number;
   lastEventAt: string | null;
+  contractWatcherCount?: number;
   reconnectAttempt: number;
+  pausedSources?: ("horizon" | "soroban")[];
   sources: {
     horizon: SourceStatus;
     soroban: SourceStatus;
@@ -424,6 +426,12 @@ export type CoreConfig = {
   /** Optional reconnection configuration. */
   reconnect?: ReconnectConfig;
   logger?: Logger;
+  /** Optional cursor store for resumable streams. */
+  cursorStore?: CursorStore;
+  /** Key to use for cursor storage. Defaults to "pulse-core-cursor". */
+  streamKey?: string;
+  /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
+  cursorFailureThreshold?: number;
 };
 
 // Error class for invalid network validation
@@ -434,15 +442,6 @@ export class UnknownNetworkError extends Error {
     this.name = "UnknownNetworkError";
   }
 }
-
-export type EngineStatus = {
-  running: boolean;
-  watcherCount: number;
-  contractWatcherCount?: number;
-  lastEventAt: string | null;
-  reconnectAttempt: number;
-  pausedSources?: ("horizon" | "soroban")[];
-};
 
 export type HealthCheckResult = {
   ok: boolean;
@@ -529,6 +528,7 @@ export type ContractSubscriptionFilter = {
 /** Options for subscribeContract(). */
 export type ContractSubscribeOptions = {
   filters?: ContractSubscriptionFilter[];
+  filter?: (event: NormalizedEvent) => boolean;
   /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
   name?: string;
 };
