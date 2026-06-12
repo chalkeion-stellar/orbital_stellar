@@ -221,7 +221,7 @@ Contributions are welcome from the Stellar community. Start here:
 - Stellar Wave Program issues are tagged `wave-program` and pay per-merge per complexity points.
 - Run the test suite before submitting: `pnpm -r typecheck && pnpm test`.
 
-All contributors are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md) _(in progress)_.
+All contributors are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
 
