@@ -654,8 +654,6 @@ export class EventEngine {
       emittedAt: new Date().toISOString(),
     });
 
-    this.pausedSources.clear();
-
     for (const watcher of this.registry.values()) {
       watcher.stop();
     }
