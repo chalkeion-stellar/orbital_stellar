@@ -43,6 +43,9 @@ importers:
       '@orbital-stellar/pulse-core':
         specifier: workspace:*
         version: link:../../packages/pulse-core
+      '@orbital-stellar/pulse-notify':
+        specifier: workspace:*
+        version: link:../../packages/pulse-notify
       framer-motion:
         specifier: ^12.36.0
         version: 12.36.0(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
