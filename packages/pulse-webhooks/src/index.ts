@@ -1,3 +1,4 @@
+
 import { createHmac, timingSafeEqual } from "crypto";
 import type { NormalizedEvent, Watcher } from "@orbital/pulse-core";
 import type { WebhookConfig } from "./types.js";
@@ -132,3 +133,4 @@ export function verifyWebhook(
     return null;
   }
 }
+

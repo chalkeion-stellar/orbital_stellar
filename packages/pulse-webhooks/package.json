@@ -1,20 +1,42 @@
 {
-  "name": "@orbital/pulse-webhooks",
-  "private": true,
-  "version": "0.0.0",
+  "name": "@orbital-stellar/pulse-webhooks",
+  "version": "0.1.0",
+  "description": "HMAC-signed webhook delivery and verification for Stellar events (Node + edge runtimes).",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/determined-001/orbital_stellar.git",
+    "directory": "packages/pulse-webhooks"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+
   },
   "dependencies": {
-    "@orbital/pulse-core": "workspace:*"
+    "@orbital-stellar/pulse-core": "workspace:*"
   },
   "devDependencies": {
+
     "@types/node": "^25.5.0",
     "tsx": "^4.0.0",
     "vitest": "^4.1.2"
+
   }
 }
