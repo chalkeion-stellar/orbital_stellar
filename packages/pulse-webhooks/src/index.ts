@@ -9,22 +9,34 @@ export class WebhookDelivery {
   private config: Required<WebhookConfig>;
   private watcher: Watcher;
   private retryTimers: Set<ReturnType<typeof setTimeout>> = new Set();
+  private activeDeliveries = 0;
 
   constructor(watcher: Watcher, config: WebhookConfig) {
     this.watcher = watcher;
-    this.config = { retries: 3, deliveryTimeoutMs: 10000, ...config };
+    this.config = { retries: 3, deliveryTimeoutMs: 10000, maxConcurrentDeliveries: 100, ...config };
 
     this.watcher.addStopHandler(() => {
       this.clearRetryTimers();
     });
 
     this.watcher.on("*", (event) => {
+      if (event.type === "webhook.backpressure") return;
+      if (this.activeDeliveries >= this.config.maxConcurrentDeliveries) {
+        this.watcher.emit("webhook.backpressure", {
+          ...event,
+          type: "webhook.backpressure" as NormalizedEvent["type"],
+          raw: { dropped: event },
+        });
+        return;
+      }
       this.deliver(event);
     });
   }
 
   private async deliver(event: NormalizedEvent, attempt = 1): Promise<void> {
     if (this.watcher.stopped) return;
+
+    if (attempt === 1) this.activeDeliveries++;
 
     const payload = JSON.stringify(event);
     const signature = this.sign(payload);
@@ -70,6 +82,7 @@ export class WebhookDelivery {
         });
       }
     } finally {
+      if (attempt === 1) this.activeDeliveries--;
       clearTimeout(abortTimer);
     }
   }

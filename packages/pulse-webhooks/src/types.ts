@@ -3,4 +3,5 @@ export type WebhookConfig = {
   secret: string;
   retries?: number;
   deliveryTimeoutMs?: number;
+  maxConcurrentDeliveries?: number;
 };
