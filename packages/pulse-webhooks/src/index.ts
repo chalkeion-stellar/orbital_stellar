@@ -14,6 +14,7 @@ export type { BackoffStrategy } from "./backoff.js";
 import { NOOP_WEBHOOK_METRICS } from "./metrics.js";
 export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
 export { RedisRetryQueue } from "./RedisRetryQueue.js";
+export { SqsRetryQueue } from "./SqsRetryQueue.js";
 export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
 export type {
   DeadLetterEntry,
