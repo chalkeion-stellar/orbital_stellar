@@ -200,8 +200,8 @@ export class WebhookDelivery {
     const spanAttrs: Record<string, string | number | boolean> = {
       "webhook.url": url,
       "webhook.attempt": attempt,
-      "url": url,
-      "attempt": attempt,
+      url: url,
+      attempt: attempt,
     };
     if (parentTraceId !== undefined) {
       spanAttrs["webhook.parent_trace_id"] = parentTraceId;

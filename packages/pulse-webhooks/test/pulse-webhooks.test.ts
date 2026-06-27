@@ -540,8 +540,8 @@ describe("pulse-webhooks WebhookDelivery tracer", () => {
       expect.objectContaining({
         "webhook.url": "https://example.com/hook",
         "webhook.attempt": 1,
-        "url": "https://example.com/hook",
-        "attempt": 1,
+        url: "https://example.com/hook",
+        attempt: 1,
       }),
     );
     expect(span.setAttribute).toHaveBeenCalledWith("webhook.status", 200);
@@ -662,7 +662,7 @@ describe("pulse-webhooks WebhookDelivery tracer", () => {
       "webhook.delivery",
       expect.objectContaining({
         "webhook.parent_trace_id": "abc123",
-        "parent_trace_id": "abc123",
+        parent_trace_id: "abc123",
       }),
     );
   });
