@@ -6,6 +6,7 @@ import { SorobanRpcClient } from "./SorobanRpcClient.js";
 import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
 import { toStellarAmount } from "./amount.js";
+import { validateContractFilters } from "./contractFilters.js";
 import type {
   AccountCreatedEvent,
   AccountMergeEvent,
@@ -45,6 +46,7 @@ import type {
   WatcherNotificationType,
   Logger,
   CursorStore,
+  DecodeFailedNotification,
   RawHorizonPayment,
   RawHorizonSetOptions,
   RawHorizonCreateAccount,
@@ -392,7 +394,9 @@ export class EventEngine {
    * Subscribes to Soroban contract events using an RPC-shaped filter config.
    * Deduplicates by a stable key over the filter shape — repeated calls with
    * semantically equal configs return the same Watcher instance.
-   * Throws synchronously when filters.length > 5 or any filter's contractIds.length > 5.
+   * Throws synchronously when the filter shape is invalid — more than 5 filters,
+   * a filter with more than 5 contractIds, or a malformed topic segment array
+   * (each segment must be '*', '**', or a base64-encoded XDR scval).
    * @param config - Filter configuration mirroring the RPC getEvents filter shape.
    */
   subscribeContract(config: ContractSubscriptionConfig): Watcher;
@@ -403,18 +407,11 @@ export class EventEngine {
     // New config-object overload
     if (typeof idOrConfig === "object") {
       const config = idOrConfig;
-      if (config.filters.length > 5) {
-        throw new Error(
-          `ContractSubscriptionConfig.filters must have ≤ 5 entries, got ${config.filters.length}`,
-        );
-      }
-      for (let i = 0; i < config.filters.length; i++) {
-        const f = config.filters[i]!;
-        if (f.contractIds !== undefined && f.contractIds.length > 5) {
-          throw new Error(
-            `ContractSubscriptionConfig.filters[${i}].contractIds must have ≤ 5 entries, got ${f.contractIds.length}`,
-          );
-        }
+      // Validate the whole filter shape up front so callers get a clear, synchronous
+      // error instead of a 4xx from the RPC (5-filter / 5-contractId / topic limits).
+      const validationErrors = validateContractFilters(config.filters);
+      if (validationErrors) {
+        throw new Error(`Invalid ContractSubscriptionConfig: ${validationErrors.join("; ")}`);
       }
 
       const key = stableFilterKey(config.filters);
@@ -578,19 +575,37 @@ export class EventEngine {
 
   async healthCheck(thresholdMs = 5 * 60 * 1000): Promise<HealthCheckResult> {
     const reasons: string[] = [];
+
     if (!this.isRunning) {
-      reasons.push("engine is not running");
+      reasons.push("horizon source is not running");
     }
     if (this.lastEventAt === null) {
-      reasons.push("no events received yet");
+      reasons.push("horizon source: no events received yet");
     } else {
       const age = Date.now() - new Date(this.lastEventAt).getTime();
       if (age > thresholdMs) {
         reasons.push(
-          `last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`,
+          `horizon source: last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`,
         );
       }
     }
+
+    if (this.sorobanSubscriber) {
+      if (!this.sorobanSubscriber.isRunning) {
+        reasons.push("soroban subscriber is not running");
+      }
+      if (this.sorobanSubscriber.lastEventAt === null) {
+        reasons.push("soroban subscriber: no events received yet");
+      } else {
+        const age = Date.now() - new Date(this.sorobanSubscriber.lastEventAt).getTime();
+        if (age > thresholdMs) {
+          reasons.push(
+            `soroban subscriber: last event was ${Math.floor(age / 1000)}s ago (threshold ${Math.floor(thresholdMs / 1000)}s)`,
+          );
+        }
+      }
+    }
+
     if (this.cursorStore?.ping) {
       try {
         await this.cursorStore.ping();
@@ -1501,9 +1516,19 @@ export class EventEngine {
       data: r.data ?? null,
       decodedData: r.decodedData,
       ...(typeof r.ledger === "number" ? { ledger: r.ledger } : {}),
-      ...(typeof r.eventId === "string" ? { eventId: r.eventId } : {}),
-      ...(typeof r.txHash === "string" ? { txHash: r.txHash } : {}),
-      inSuccessfulContractCall: Boolean(r.inSuccessfulContractCall),
+      ...(typeof r.eventId === "string"
+        ? { eventId: r.eventId }
+        : typeof r.event_id === "string"
+          ? { eventId: r.event_id }
+          : {}),
+      ...(typeof r.txHash === "string"
+        ? { txHash: r.txHash }
+        : typeof r.tx_hash === "string"
+          ? { txHash: r.tx_hash }
+          : {}),
+      inSuccessfulContractCall: Boolean(
+        r.inSuccessfulContractCall ?? r.in_successful_contract_call,
+      ),
       timestamp: r.created_at,
       raw: raw as RawSorobanEvent,
     };
@@ -1561,6 +1586,24 @@ export class EventEngine {
       if (this.matchesContractFilters(event, filters) && this.passesFilter(id, event)) {
         watcher.emit(event.type, event);
         watcher.emit("*", event);
+      }
+    }
+  }
+
+  private emitDecodeFailedNotification(
+    event: Timestamped<ContractEmittedEvent>,
+    error: string,
+  ): void {
+    const notification: DecodeFailedNotification = {
+      type: "event.decode_failed",
+      contractId: event.contractId,
+      eventId: event.eventId,
+      error,
+    };
+
+    for (const [id, { watcher, filters }] of this.contractRegistry.entries()) {
+      if (this.matchesContractFilters(event, filters) && this.passesFilter(id, event)) {
+        watcher.emit("event.decode_failed", notification);
       }
     }
   }
@@ -1745,13 +1788,22 @@ export class EventEngine {
             if (spec !== null && spec !== undefined) {
               (event as ContractEmittedEvent).decodedData =
                 (spec as { entries?: unknown }).entries ?? spec;
+            } else {
+              (event as ContractEmittedEvent).decodedData = undefined;
+              this.emitDecodeFailedNotification(
+                event,
+                `No ABI spec found for contract ${contractId}`,
+              );
             }
             this.dispatchContractEvent(event);
           },
           (err: unknown) => {
+            (event as ContractEmittedEvent).decodedData = undefined;
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            this.emitDecodeFailedNotification(event, errorMessage);
             this.log.warn("ABI registry lookup failed for contract.emitted event", {
               contractId,
-              error: err instanceof Error ? err.message : String(err),
+              error: errorMessage,
             });
             this.dispatchContractEvent(event);
           },
