@@ -162,6 +162,7 @@ export class SorobanSubscriber extends EventEmitter {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: SorobanSubscriberOptions) {
+    super();
     const pageLimit = options.pageLimit ?? options.pageSize ?? DEFAULT_PAGE_LIMIT;
     if (!Number.isFinite(pageLimit) || pageLimit < MIN_PAGE_LIMIT || pageLimit > MAX_PAGE_LIMIT) {
       throw new RangeError(`pageLimit must be between 1 and 10,000 (received ${pageLimit})`);
@@ -349,7 +350,7 @@ export class SorobanSubscriber extends EventEmitter {
       ),
     );
 
-    let results: { events: SorobanEvent[], latestLedger?: number }[];
+    let results: { events: SorobanEvent[]; latestLedger?: number }[];
     try {
       results = await Promise.all(promises);
     } catch (err) {
@@ -370,7 +371,7 @@ export class SorobanSubscriber extends EventEmitter {
             if (latestLedger !== undefined) {
               console.warn(
                 `[pulse-core] Soroban subscriber cursor expired (lost: ${lostCursor}). ` +
-                `Falling back to startLedger = ${latestLedger}. Data loss occurred.`
+                  `Falling back to startLedger = ${latestLedger}. Data loss occurred.`,
               );
               if (!this.isReplayMode) {
                 await this.cursorStore.saveCursor(latestLedger.toString());
@@ -380,9 +381,8 @@ export class SorobanSubscriber extends EventEmitter {
               this.scheduleRetry();
               return;
             }
-          } catch (fallbackErr) {
-            // let fallback errors fall through to the terminal/retryable handler logic below
-            err = fallbackErr as any;
+          } catch {
+            // fallback fetch failed; continue with the original cursor-expired error
           }
         }
         if ((err as SorobanRpcError).retryable) {
