@@ -45,6 +45,7 @@ import type {
   WatcherNotificationType,
   Logger,
   CursorStore,
+  CursorStoreLike,
   RawHorizonPayment,
   RawHorizonSetOptions,
   RawHorizonCreateAccount,
@@ -171,9 +172,10 @@ export class EventEngine {
   private horizonCursor?: string;
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
   private log: Logger;
-  private cursorStore?: CursorStore;
+  private cursorStore?: CursorStoreLike;
   private readonly network: Network;
   private streamKey: string;
+  private streamEpoch = 0;
   private cursorFailureThreshold: number;
   private consecutiveCursorFailures = 0;
   private isCursorStoreUnhealthy = false;
@@ -712,6 +714,12 @@ export class EventEngine {
           });
         }
 
+        const cursor = this.getHorizonCursor(record);
+        if (cursor !== null) {
+          this.horizonCursor = cursor;
+          void this.persistHorizonCursor(cursor);
+        }
+
         const event = this.normalize(record);
         if (!event) {
           return;
@@ -726,7 +734,59 @@ export class EventEngine {
       },
     };
 
-    this.stopStream = this.server.operations().cursor("now").stream(callbacks);
+    const streamEpoch = ++this.streamEpoch;
+    if (!this.cursorStore) {
+      this.stopStream = this.server.operations().cursor("now").stream(callbacks);
+      return;
+    }
+
+    void this.resolveStreamCursor().then((streamCursor) => {
+      if (streamEpoch !== this.streamEpoch || !this.isRunning) {
+        return;
+      }
+
+      this.horizonCursor = streamCursor;
+      this.stopStream = this.server.operations().cursor(streamCursor).stream(callbacks);
+    });
+  }
+
+  private getHorizonCursor(record: unknown): string | null {
+    if (!this.isRecord(record)) {
+      return null;
+    }
+
+    const cursor = this.getStringField(record, "paging_token");
+    return cursor ?? this.getStringField(record, "pagingToken");
+  }
+
+  private async resolveStreamCursor(): Promise<string> {
+    if (!this.cursorStore) {
+      return "now";
+    }
+
+    try {
+      const cursor = await this.cursorStore.get(this.streamKey);
+      return cursor ?? "now";
+    } catch (err) {
+      this.log.warn("[pulse-core] cursorStore.get() failed during stream startup.", {
+        key: this.streamKey,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return "now";
+    }
+  }
+
+  private async persistHorizonCursor(cursor: string): Promise<void> {
+    if (!this.cursorStore) {
+      return;
+    }
+
+    try {
+      await this.cursorStore.set(this.streamKey, cursor);
+      this.consecutiveCursorFailures = 0;
+    } catch (err) {
+      this.handleCursorFailure(err);
+    }
   }
 
   private handleStreamError(error?: unknown): void {

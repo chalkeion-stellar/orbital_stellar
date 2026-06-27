@@ -65,3 +65,11 @@ export abstract class CursorStore {
    */
   ping?: () => Promise<unknown>;
 }
+export type CursorStoreLike = {
+  get(streamKey: string): Promise<string | null>;
+  set(streamKey: string, cursor: string): Promise<void>;
+  getMany?(keys: string[]): Promise<Record<string, string | null>>;
+  setMany?(entries: Record<string, string>): Promise<void>;
+  getAll?(): Promise<Array<{ streamKey: string; cursor: string }>>;
+  ping?(): Promise<unknown>;
+};

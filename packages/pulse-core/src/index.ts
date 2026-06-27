@@ -21,6 +21,7 @@ export type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js
 export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
+export type { CursorStoreLike } from "./CursorStore.js";
 export { MemoryCursorStore } from "./MemoryCursorStore.js";
 export { FileCursorStore } from "./FileCursorStore.js";
 export { PostgresCursorStore } from "./PostgresCursorStore.js";
@@ -437,7 +438,7 @@ export type CoreConfig = {
   reconnect?: ReconnectConfig;
   logger?: Logger;
   /** Optional cursor store for resumable streams. */
-  cursorStore?: CursorStore;
+  cursorStore?: CursorStoreLike;
   /** Key to use for cursor storage. Defaults to "pulse-core-cursor". */
   streamKey?: string;
   /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
