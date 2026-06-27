@@ -156,7 +156,7 @@ function amountToStroop(amount: string): bigint | null {
   }
 }
 
-export type PaymentState = EventState<PaymentEvent> & {
+export type PaymentState = EventState<PaymentEvent & { readonly timestampDate: Date }> & {
   amountStroop: bigint | null;
 };
 
