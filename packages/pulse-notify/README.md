@@ -155,48 +155,6 @@ Shorthand for payments received. Equivalent to `useStellarEvent(serverUrl, addre
 
 Shorthand for all events on an address. Equivalent to `useStellarEvent(serverUrl, address, { event: "*" })`.
 
-### `useContractEvent(config)`
-
-Subscribes to Soroban contract events (either contract function invocations or emitted events).
-
-```ts
-const { event, connected, error } = useContractEvent({
-  serverUrl: "https://events.example.com",
-  contractId: "C...",
-  topics: ["transfer"],
-});
-```
-
-#### Backend SSE Contract
-The hook communicates with the backend SSE endpoint at:
-`${serverUrl}/contract_events/${contractId}`
-
-The following query parameters can be appended:
-- `topics`: Comma-separated list of event topics to subscribe to.
-- `token`: Authorization token forwarded as a query parameter.
-
-#### Type Narrowing for Contract Events
-`useContractEvent` accepts a type parameter `T` extending `ContractInvokedEvent | ContractEmittedEvent` to narrow the event payload:
-
-```tsx
-import type { ContractEmittedEvent } from "@orbital-stellar/pulse-core";
-import { useContractEvent } from "@orbital-stellar/pulse-notify";
-
-function TokenMonitor() {
-  const { event } = useContractEvent<ContractEmittedEvent>({
-    serverUrl: "https://events.example.com",
-    contractId: "C...",
-    topics: ["transfer"],
-  });
-
-  if (!event) return null;
-
-  // event is typed as ContractEmittedEvent
-  return <div>Data: {JSON.stringify(event.data)}</div>;
-}
-```
-
-
 ### `<StellarConnectionStatus serverUrl address />`
 
 Small client-side status indicator for places that need connection health but do not need to wire `connected` and `error` state by hand.
