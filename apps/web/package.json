@@ -6,11 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "pagefind": "pagefind --source content --output-path public/search"
+    "lint": "next lint"
   },
   "dependencies": {
-
+    "@orbital-stellar/pulse-core": "workspace:*",
     "framer-motion": "^12.36.0",
     "geist": "^1.7.0",
     "gray-matter": "^4.0.3",
@@ -27,7 +26,6 @@
     "autoprefixer": "^10.5.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^4.3.1",
-    "typescript": "^6.0.3",
-    "pagefind": "^1.0.0"
+    "typescript": "^6.0.3"
   }
 }

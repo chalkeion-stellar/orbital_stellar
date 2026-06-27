@@ -34,11 +34,5 @@
     "path-to-regexp": "0.1.13",
     "vite": "7.3.3",
     "axios": "1.17.0"
-  },
-  "dependencies": {
-    "react-markdown": "^10.0.0",
-    "remark-gfm": "^4.0.0",
-    "rehype-slug": "^5.1.0",
-    "rehype-autolink-headings": "^7.0.0"
   }
 }

@@ -2,15 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-// Define the shape of a search result used by Pagefind
-interface SearchResult {
-  title: string;
-  href: string;
-  section: string;
-  snippet: string;
-  matchInTitle: boolean;
-}
-
+import type { SearchResult } from '@/app/api/docs/search/route'
 import { allDocPages } from '@/lib/docroutes'
 
 type Props = {
@@ -36,8 +28,7 @@ export default function SearchDialog({ open, onClose }: Props) {
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [pagefind, setPagefind] = useState<any>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Show all pages when query is empty
   const defaultResults: SearchResult[] = allDocPages.map((p) => ({
@@ -68,49 +59,21 @@ export default function SearchDialog({ open, onClose }: Props) {
 
   // Debounced search
   useEffect(() => {
-    if (!pagefind) {
-      // Load Pagefind script lazily via <script> tag
-      const loadPagefind = () => {
-        if ((window as any).pagefind) return Promise.resolve((window as any).pagefind);
-        return new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = '/search/pagefind.js';
-          script.onload = () => resolve((window as any).pagefind);
-          script.onerror = reject;
-          document.body.appendChild(script);
-        });
-      };
-      loadPagefind()
-        .then((mod) => setPagefind(mod))
-        .catch(console.error);
-      return;
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (query.trim().length < 2) {
-      setResults([]);
-      return;
-    }
-    setLoading(true);
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (query.trim().length < 2) { setResults([]); return }
+
+    setLoading(true)
     debounceRef.current = setTimeout(async () => {
       try {
-        const raw = await pagefind.search(query);
-        const data: SearchResult[] = raw.results.map((r: any) => ({
-          title: r.meta.title || '',
-          href: r.url,
-          section: r.url.replace('/docs/', '').split('/')[0]
-            .split('-')
-            .map((w: string) => w[0].toUpperCase() + w.slice(1))
-            .join(' '),
-          snippet: r.excerpt || '',
-          matchInTitle: false,
-        }));
-        setResults(data);
-        setSelected(0);
+        const res = await fetch(`/api/docs/search?q=${encodeURIComponent(query)}`)
+        const data: SearchResult[] = await res.json()
+        setResults(data)
+        setSelected(0)
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
-    }, 200);
-  }, [query, pagefind]);
+    }, 200)
+  }, [query])
 
   // Keyboard navigation
   useEffect(() => {

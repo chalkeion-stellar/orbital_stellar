@@ -50,6 +50,7 @@ const LABEL_DEFS = [
   ['area:pulse-core',     '0E8A16', 'Event engine, normalization, watcher routing'],
   ['area:pulse-webhooks', '1D76DB', 'HMAC delivery, retry, SSRF, edge verification'],
   ['area:pulse-notify',   '5319E7', 'React hooks for live events'],
+  ['area:apps-web',       'E4E669', 'Documentation site and web app (apps/web)'],
   ['type:bug',            'D73A4A', ''],
   ['type:feature',        'A2EEEF', ''],
   ['type:docs',           '0075CA', ''],
@@ -81,6 +82,7 @@ const AREA_BY_MAJOR = {
   1: 'area:pulse-core',
   2: 'area:pulse-webhooks',
   3: 'area:pulse-notify',
+  5: 'area:apps-web',
 };
 
 function areaLabel(issueNum) {
