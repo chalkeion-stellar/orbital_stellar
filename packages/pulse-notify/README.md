@@ -1,6 +1,6 @@
 # @orbital-stellar/pulse-notify
 
-**React hooks for live Stellar events.** Drop a hook into any component and receive real-time payment, activity, or custom event streams from an Orbital server — with automatic reconnection and zero wiring. Includes `useStellarHistory` for accumulating a bounded, FIFO-evicted event log.
+**React hooks for live Stellar events.** Drop a hook into any component and receive real-time payment, activity, or custom event streams from an Orbital server — with automatic reconnection and zero wiring.
 
 ```bash
 pnpm add @orbital-stellar/pulse-notify react
@@ -155,50 +155,6 @@ Shorthand for payments received. Equivalent to `useStellarEvent(serverUrl, addre
 
 Shorthand for all events on an address. Equivalent to `useStellarEvent(serverUrl, address, { event: "*" })`.
 
-### `useStellarHistory(serverUrl, address, options?)`
-
-Accumulates every incoming event for `address` into a bounded array with FIFO eviction — no boilerplate required.
-
-```ts
-const { history, event, connected, error } = useStellarHistory(
-  "https://events.example.com",
-  "GABC...",
-  { capacity: 50 }, // optional — defaults to 100
-);
-```
-
-`history` is an ordered array of `NormalizedEvent` items — oldest first, newest last — capped at `capacity`. When the cap is reached the oldest entry is dropped before the new one is appended.
-
-```tsx
-"use client";
-import { useStellarHistory } from "@orbital-stellar/pulse-notify";
-
-export function ActivityFeed({ address }: { address: string }) {
-  const { history, connected } = useStellarHistory(
-    process.env.NEXT_PUBLIC_ORBITAL_URL!,
-    address,
-    { capacity: 25 },
-  );
-
-  if (!connected) return <p>Connecting…</p>;
-
-  return (
-    <ul>
-      {history.map((e, i) => (
-        <li key={i}>{e.type} — {e.timestamp}</li>
-      ))}
-    </ul>
-  );
-}
-```
-
-**Options**
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `capacity` | `number` | `100` | Maximum events retained. When exceeded the oldest event is evicted (FIFO). |
-| `token` | `string` | — | API key forwarded as `?token=` (see [Authentication](#authentication)). |
-
 ### `<StellarConnectionStatus serverUrl address />`
 
 Small client-side status indicator for places that need connection health but do not need to wire `connected` and `error` state by hand.
@@ -277,7 +233,16 @@ function Wallet({ address }: { address: string }) {
 
 The default `T = NormalizedEvent` keeps the existing untyped behavior — pass `<T>` only when you want narrowing.
 
-Every render returns the *most recent* event. If you need history use [`useStellarHistory`](#usestellarhistoryserverurl-address-options).
+Every render returns the *most recent* event. If you need history, accumulate it yourself in component state:
+
+```tsx
+const [history, setHistory] = useState<NormalizedEvent[]>([]);
+const { event } = useStellarActivity(url, address);
+
+useEffect(() => {
+  if (event) setHistory((h) => [event, ...h].slice(0, 50));
+}, [event]);
+```
 
 ## Stable config
 
