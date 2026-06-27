@@ -16,6 +16,7 @@ export type UseEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   event?: string | string[];
   /** API key forwarded as ?token= query param — required when the server has authentication enabled */
   token?: string;
+  tokenProvider?: () => Promise<string>;
   /** SSR initial state; replaced on first live event */
   initialEvent?: T | null;
   /** Client-side predicate; events that return false are suppressed before state update */
@@ -43,7 +44,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   address: string,
   options?: Pick<
     UseEventConfig<T>,
-    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
+    "event" | "token" | "tokenProvider" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
   >,
 ): EventState<T>;
 export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
@@ -51,7 +52,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   address?: string,
   options?: Pick<
     UseEventConfig<T>,
-    "event" | "token" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
+    "event" | "token" | "tokenProvider" | "initialEvent" | "filter" | "withCredentials" | "onEvent"
   >,
 ): EventState<T> {
   const serverUrl = typeof configOrUrl === "string" ? configOrUrl : configOrUrl.serverUrl;
@@ -59,6 +60,8 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   const eventType: string | string[] =
     typeof configOrUrl === "string" ? (options?.event ?? "*") : (configOrUrl.event ?? "*");
   const token = typeof configOrUrl === "string" ? options?.token : configOrUrl.token;
+  const tokenProvider =
+    typeof configOrUrl === "string" ? options?.tokenProvider : configOrUrl.tokenProvider;
   const initialEvent: T | null =
     (typeof configOrUrl === "string" ? options?.initialEvent : configOrUrl.initialEvent) ?? null;
   const filter = typeof configOrUrl === "string" ? options?.filter : configOrUrl.filter;
@@ -79,6 +82,17 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     onEventRef.current = onEvent;
   });
 
+  const tokenProviderRef = useRef(tokenProvider);
+  useEffect(() => {
+    tokenProviderRef.current = tokenProvider;
+  });
+
+  const [activeToken, setActiveToken] = useState<string | undefined>(token);
+
+  useEffect(() => {
+    setActiveToken(token);
+  }, [token]);
+
   const [state, setState] = useState<EventState<T>>({
     event: initialEvent,
     connected: false,
@@ -87,14 +101,60 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
   });
 
   useEffect(() => {
+    if (activeToken === undefined && tokenProviderRef.current) {
+      let active = true;
+      tokenProviderRef
+        .current()
+        .then((newToken) => {
+          if (active) {
+            setActiveToken(newToken);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setState((prev) => ({ ...prev, connected: false, error: "token expired" }));
+          }
+        });
+      return () => {
+        active = false;
+      };
+    }
+  }, [activeToken]);
+
+  useEffect(() => {
+    if (activeToken === undefined && tokenProviderRef.current) {
+      return;
+    }
+
     const acquire = transport === "websocket" ? acquireWsConnection : acquireEventConnection;
     const connection = acquire(
-      { serverUrl, address: addr, token, ...(transport === "sse" ? { withCredentials } : {}) },
+      {
+        serverUrl,
+        address: addr,
+        token: activeToken,
+        ...(transport === "sse" ? { withCredentials } : {}),
+      },
       {
         onOpen: () => {
           setState((prev) => ({ ...prev, connected: true, error: null }));
         },
         onEvent: (incoming) => {
+          if ((incoming.type as string) === "auth_expired") {
+            if (tokenProviderRef.current) {
+              tokenProviderRef
+                .current()
+                .then((newToken) => {
+                  setActiveToken(newToken);
+                })
+                .catch(() => {
+                  setState((prev) => ({ ...prev, connected: false, error: "token expired" }));
+                });
+            } else {
+              setState((prev) => ({ ...prev, connected: false, error: "token expired" }));
+            }
+            return;
+          }
+
           onEventRef.current?.(incoming);
 
           const allowed =
@@ -134,7 +194,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     };
     // ✅ eventKey is a serialised string — stable even when the caller passes
     // an array literal, which would otherwise be a new reference every render.
-  }, [serverUrl, addr, eventKey, token, withCredentials, transport]);
+  }, [serverUrl, addr, eventKey, activeToken, withCredentials, transport]);
 
   return state;
 }
@@ -215,6 +275,7 @@ export type UseContractEventConfig<T extends NormalizedEvent = NormalizedEvent> 
   contractId: string;
   topics?: string[];
   token?: string;
+  tokenProvider?: () => Promise<string>;
   /** SSR initial state; replaced on first live event */
   initialEvent?: T | null;
   /** Client-side predicate; events that return false are suppressed before state update */
@@ -232,8 +293,17 @@ export function useContractEvent<
     { type: "contract.invoked" | "contract.emitted" }
   >,
 >(config: UseContractEventConfig<T>): EventState<T> {
-  const { serverUrl, contractId, topics, token, initialEvent, filter, withCredentials, onEvent } =
-    config;
+  const {
+    serverUrl,
+    contractId,
+    topics,
+    token,
+    tokenProvider,
+    initialEvent,
+    filter,
+    withCredentials,
+    onEvent,
+  } = config;
 
   const filterRef = useRef(filter);
   useEffect(() => {
@@ -245,6 +315,17 @@ export function useContractEvent<
     onEventRef.current = onEvent;
   }, [onEvent]);
 
+  const tokenProviderRef = useRef(tokenProvider);
+  useEffect(() => {
+    tokenProviderRef.current = tokenProvider;
+  });
+
+  const [activeToken, setActiveToken] = useState<string | undefined>(token);
+
+  useEffect(() => {
+    setActiveToken(token);
+  }, [token]);
+
   const [state, setState] = useState<EventState<T>>({
     event: initialEvent ?? null,
     connected: false,
@@ -253,13 +334,54 @@ export function useContractEvent<
   });
 
   useEffect(() => {
+    if (activeToken === undefined && tokenProviderRef.current) {
+      let active = true;
+      tokenProviderRef
+        .current()
+        .then((newToken) => {
+          if (active) {
+            setActiveToken(newToken);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setState((prev) => ({ ...prev, connected: false, error: "token expired" }));
+          }
+        });
+      return () => {
+        active = false;
+      };
+    }
+  }, [activeToken]);
+
+  useEffect(() => {
+    if (activeToken === undefined && tokenProviderRef.current) {
+      return;
+    }
+
     const connection = acquireContractEventConnection(
-      { serverUrl, contractId, topics, token, withCredentials },
+      { serverUrl, contractId, topics, token: activeToken, withCredentials },
       {
         onOpen: () => {
           setState((prev) => ({ ...prev, connected: true, error: null }));
         },
         onEvent: (incoming) => {
+          if ((incoming.type as string) === "auth_expired") {
+            if (tokenProviderRef.current) {
+              tokenProviderRef
+                .current()
+                .then((newToken) => {
+                  setActiveToken(newToken);
+                })
+                .catch(() => {
+                  setState((prev) => ({ ...prev, connected: false, error: "token expired" }));
+                });
+            } else {
+              setState((prev) => ({ ...prev, connected: false, error: "token expired" }));
+            }
+            return;
+          }
+
           onEventRef.current?.(incoming);
           // Basic topic filtering for emitted events
           if (incoming.type === "contract.emitted" && topics && topics.length > 0) {
@@ -296,7 +418,7 @@ export function useContractEvent<
     return () => {
       connection.unsubscribe();
     };
-  }, [serverUrl, contractId, JSON.stringify(topics ?? []), token, withCredentials]);
+  }, [serverUrl, contractId, JSON.stringify(topics ?? []), activeToken, withCredentials]);
 
   return state;
 }
