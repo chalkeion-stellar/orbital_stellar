@@ -1,4 +1,3 @@
-//redis-retry-queue.ts
 import type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 
 type RedisValue = number | string;
