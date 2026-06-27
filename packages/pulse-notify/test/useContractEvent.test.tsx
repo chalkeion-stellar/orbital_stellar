@@ -69,7 +69,7 @@ describe("useContractEvent Hook", () => {
         onEvent={(e) => {
           receivedEvent = e;
         }}
-      />
+      />,
     );
 
     // Wait for connection to open
@@ -96,9 +96,7 @@ describe("useContractEvent Hook", () => {
   });
 
   test("filters contract.emitted events by topics", async () => {
-    const { getByTestId, findByText } = render(
-      <TestComponent topics={["transfer"]} />
-    );
+    const { getByTestId, findByText } = render(<TestComponent topics={["transfer"]} />);
 
     await findByText("true", { selector: '[data-testid="connected"]' });
 

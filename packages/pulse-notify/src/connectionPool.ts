@@ -155,7 +155,13 @@ export function acquireEventConnection(key: ConnectionKey, subscriber: Connectio
 
 // --- Contract event connection helpers -------------------------------------------------
 // Build a unique key for contract subscriptions based on contractId, topics, and token.
-function getContractKey({ serverUrl, contractId, topics, token, withCredentials }: {
+function getContractKey({
+  serverUrl,
+  contractId,
+  topics,
+  token,
+  withCredentials,
+}: {
   serverUrl: string;
   contractId: string;
   topics?: string[];
@@ -163,13 +169,24 @@ function getContractKey({ serverUrl, contractId, topics, token, withCredentials 
   withCredentials?: boolean;
 }): string {
   // Sort topics to ensure stable key irrespective of order.
-  const sortedTopics = topics ? [...topics].sort().join(',') : '';
+  const sortedTopics = topics ? [...topics].sort().join(",") : "";
   // Include withCredentials flag for completeness.
-  return JSON.stringify([serverUrl, contractId, sortedTopics, token ?? "", withCredentials ?? false]);
+  return JSON.stringify([
+    serverUrl,
+    contractId,
+    sortedTopics,
+    token ?? "",
+    withCredentials ?? false,
+  ]);
 }
 
 // Construct EventSource URL for contract events, mirroring address logic.
-function getContractEventSourceUrl({ serverUrl, contractId, topics, token }: {
+function getContractEventSourceUrl({
+  serverUrl,
+  contractId,
+  topics,
+  token,
+}: {
   serverUrl: string;
   contractId: string;
   topics?: string[];
@@ -177,16 +194,22 @@ function getContractEventSourceUrl({ serverUrl, contractId, topics, token }: {
 }): string {
   const base = `${serverUrl}/contract_events/${contractId}`;
   const query: string[] = [];
-  if (topics && topics.length > 0) query.push(`topics=${encodeURIComponent(topics.join(','))}`);
+  if (topics && topics.length > 0) query.push(`topics=${encodeURIComponent(topics.join(","))}`);
   if (token) query.push(`token=${encodeURIComponent(token)}`);
-  return query.length > 0 ? `${base}?${query.join('&')}` : base;
+  return query.length > 0 ? `${base}?${query.join("&")}` : base;
 }
 
 /** Acquire a connection for a contract event subscription.
  *  Returns an object with `connected` flag and `unsubscribe` method similar to `acquireEventConnection`.
  */
 export function acquireContractEventConnection(
-  key: { serverUrl: string; contractId: string; topics?: string[]; token?: string; withCredentials?: boolean },
+  key: {
+    serverUrl: string;
+    contractId: string;
+    topics?: string[];
+    token?: string;
+    withCredentials?: boolean;
+  },
   subscriber: ConnectionSubscriber,
 ) {
   const poolKey = getContractKey(key);
@@ -267,7 +290,6 @@ export function acquireContractEventConnection(
     },
   };
 }
-
 
 export function __getConnectionPoolSizeForTests() {
   return pool.size;

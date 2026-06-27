@@ -1,7 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 
 import { acquireEventConnection, acquireContractEventConnection } from "./connectionPool.js";
-import type { NormalizedEvent, PaymentEvent, ContractInvokedEvent, ContractEmittedEvent } from "@orbital-stellar/pulse-core";
+import type {
+  NormalizedEvent,
+  PaymentEvent,
+  ContractInvokedEvent,
+  ContractEmittedEvent,
+} from "@orbital-stellar/pulse-core";
 import { acquireWsConnection } from "./wsTransport.js";
 export { useStellarEventSuspense } from "./useStellarEventSuspense.js";
 
@@ -205,7 +210,6 @@ export {
 } from "./StellarConnectionStatus.js";
 export { StellarEventBoundary } from "./StellarEventBoundary.js";
 
-
 export type UseContractEventConfig<T extends NormalizedEvent = NormalizedEvent> = {
   serverUrl: string;
   contractId: string;
@@ -226,17 +230,20 @@ export function useContractEvent<
   T extends Extract<NormalizedEvent, { type: "contract.invoked" | "contract.emitted" }> = Extract<
     NormalizedEvent,
     { type: "contract.invoked" | "contract.emitted" }
-  >
->(
-  config: UseContractEventConfig<T>,
-): EventState<T> {
-  const { serverUrl, contractId, topics, token, initialEvent, filter, withCredentials, onEvent } = config;
+  >,
+>(config: UseContractEventConfig<T>): EventState<T> {
+  const { serverUrl, contractId, topics, token, initialEvent, filter, withCredentials, onEvent } =
+    config;
 
   const filterRef = useRef(filter);
-  useEffect(() => { filterRef.current = filter; }, [filter]);
+  useEffect(() => {
+    filterRef.current = filter;
+  }, [filter]);
 
   const onEventRef = useRef(onEvent);
-  useEffect(() => { onEventRef.current = onEvent; }, [onEvent]);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
 
   const [state, setState] = useState<EventState<T>>({
     event: initialEvent ?? null,

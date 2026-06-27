@@ -146,7 +146,12 @@ describe("acquireContractEventConnection", () => {
     const eventsB: string[] = [];
 
     const a = acquireContractEventConnection(
-      { serverUrl: "https://events.example.com", contractId: "C123", topics: ["transfer"], token: "secret" },
+      {
+        serverUrl: "https://events.example.com",
+        contractId: "C123",
+        topics: ["transfer"],
+        token: "secret",
+      },
       {
         onOpen: () => undefined,
         onEvent: (event) => eventsA.push(event.type),
@@ -156,7 +161,12 @@ describe("acquireContractEventConnection", () => {
     );
 
     const b = acquireContractEventConnection(
-      { serverUrl: "https://events.example.com", contractId: "C123", topics: ["transfer"], token: "secret" },
+      {
+        serverUrl: "https://events.example.com",
+        contractId: "C123",
+        topics: ["transfer"],
+        token: "secret",
+      },
       {
         onOpen: () => undefined,
         onEvent: (event) => eventsB.push(event.type),
@@ -207,4 +217,3 @@ describe("acquireContractEventConnection", () => {
     assert.equal(__getConnectionPoolSizeForTests(), 2);
   });
 });
-
