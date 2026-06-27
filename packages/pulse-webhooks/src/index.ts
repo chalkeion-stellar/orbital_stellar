@@ -106,15 +106,15 @@ export class WebhookDelivery {
   // Map of timer -> event so we can evict the newest entry when the cap is hit.
   private retryTimers: Map<ReturnType<typeof setTimeout>, { event: NormalizedEvent; url: string }> =
     new Map();
-// Map to store idempotency delivery IDs per event and URL
-private deliveryIds: Map<NormalizedEvent, Map<string, string>> = new Map();
+  // Map to store idempotency delivery IDs per event and URL
+  private deliveryIds: Map<NormalizedEvent, Map<string, string>> = new Map();
 
-// Timers that fire a durable-queue drain at each record's due time (only used
-// when `config.retryQueue` is set).
-private queueDrainTimers = new Set<ReturnType<typeof setTimeout>>();
+  // Timers that fire a durable-queue drain at each record's due time (only used
+  // when `config.retryQueue` is set).
+  private queueDrainTimers = new Set<ReturnType<typeof setTimeout>>();
 
-// Monotonic counter for durable RetryRecord ids.
-private retrySeq = 0;
+  // Monotonic counter for durable RetryRecord ids.
+  private retrySeq = 0;
 
   constructor(watcher: Watcher, config: WebhookConfig, dlq?: DeadLetterStore) {
     this.watcher = watcher;

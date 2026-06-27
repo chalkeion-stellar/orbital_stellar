@@ -188,7 +188,6 @@ watcher.on("webhook.dropped", (event) => {
   - `x-orbital-signature`: hex-encoded HMAC-SHA256 of `x-orbital-timestamp + "." + raw body`
   - `x-orbital-timestamp`: Unix epoch milliseconds as a string (for example: `1714176000000`)
   - `x-orbital-attempt`: `1`, `2`, … up to `retries`
-  - `x-orbital-delivery-id`: UUID v4 identifier unique per event‑URL pair, reused across retries
 - **Success:** Any 2xx response
 - **Retry:** Any non-2xx, network error, or timeout. Backoff is exponential: `2^(attempt-1) × 1000 ms`.
 - **Failure:** After `retries` unsuccessful attempts for a given URL, the watcher emits `webhook.failed` with the original event in `raw.originalEvent` and the failed target in `raw.url`.

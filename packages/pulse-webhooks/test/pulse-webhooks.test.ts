@@ -566,7 +566,9 @@ describe("pulse-webhooks WebhookDelivery tracer", () => {
     const headers1 = fetchMock.mock.calls[0][1].headers;
     const deliveryId1 = headers1["x-orbital-delivery-id"];
     expect(deliveryId1).toBeDefined();
-    expect(deliveryId1).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i); // UUID v4 pattern
+    expect(deliveryId1).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    ); // UUID v4 pattern
 
     // advance to trigger retry (attempt 2)
     vi.advanceTimersByTime(2000);
