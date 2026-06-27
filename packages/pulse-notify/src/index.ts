@@ -156,6 +156,10 @@ function amountToStroop(amount: string): bigint | null {
   }
 }
 
+export type PaymentState = EventState<PaymentEvent> & {
+  amountStroop: bigint | null;
+};
+
 export function useStellarPayment(
   serverUrl: string,
   address: string,
@@ -164,7 +168,7 @@ export function useStellarPayment(
     filter?: (event: NormalizedEvent) => boolean;
     withCredentials?: boolean;
   },
-) {
+): PaymentState {
   const base = useStellarEvent(serverUrl, address, {
     event: "payment.received",
     initialEvent: (options?.initialEvent ?? undefined) as NormalizedEvent | undefined,
