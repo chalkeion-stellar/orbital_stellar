@@ -84,7 +84,12 @@ export interface SorobanSubscriberOptions {
   pageLimit?: number;
   /** @deprecated Alias for {@link SorobanSubscriberOptions.pageLimit}. */
   pageSize?: number;
-  /** Max distinct event IDs remembered for cross-poll de-duplication. Defaults to 10,000. */
+  /**
+   * Size of the LRU window of recent event IDs used for cross-poll
+   * de-duplication. Within this window a repeated event ID (e.g. the same page
+   * re-returned under retry) is suppressed, so downstream consumers see each
+   * event exactly once. Defaults to 1024.
+   */
   dedupCacheSize?: number;
   /** Interval for the self-driving {@link SorobanSubscriber.start} poll loop. Defaults to 2000ms. */
   pollIntervalMs?: number;
@@ -104,7 +109,7 @@ export interface SorobanSubscriberOptions {
 const MIN_PAGE_LIMIT = 1;
 const MAX_PAGE_LIMIT = 10_000;
 const DEFAULT_PAGE_LIMIT = 100;
-const DEFAULT_DEDUP_CACHE_SIZE = 10_000;
+const DEFAULT_DEDUP_CACHE_SIZE = 1024;
 
 export class SorobanSubscriber extends EventEmitter {
   private readonly rpc: SorobanRpc;
@@ -132,7 +137,12 @@ export class SorobanSubscriber extends EventEmitter {
   subscriptions: SorobanSubscription[] = [];
 
   // --- Cross-poll de-duplication state ---
-  /** Insertion-ordered set of recently-delivered event IDs (bounded FIFO window). */
+  /**
+   * LRU window of recently-delivered event IDs (insertion order = recency).
+   * Re-seeing an ID refreshes its recency; once the window exceeds
+   * `dedupCacheSize` the least-recently-used ID is evicted. Guarantee: an event
+   * ID is delivered downstream at most once while it remains in this window.
+   */
   private readonly seen = new Set<string>();
   private readonly dedupCacheSize: number;
 
@@ -437,8 +447,12 @@ export class SorobanSubscriber extends EventEmitter {
           }
         }
 
-        // Cross-poll de-duplication: suppress IDs we've already delivered.
-        if (this.seen.has(event.id)) continue;
+        // Cross-poll de-duplication: suppress IDs we've already delivered, and
+        // refresh their recency so a repeated ID stays alive in the LRU window.
+        if (this.seen.has(event.id)) {
+          this.touchSeen(event.id);
+          continue;
+        }
 
         // Deliver before recording so a throwing handler leaves the ID
         // un-recorded (and therefore re-deliverable on a later poll).
@@ -529,14 +543,24 @@ export class SorobanSubscriber extends EventEmitter {
     });
   }
 
-  /** Records a delivered event ID, evicting the oldest entries past the cap. */
+  /**
+   * Records a delivered event ID at the most-recently-used end of the LRU
+   * window, evicting the least-recently-used IDs once the cap is exceeded.
+   */
   private recordSeen(id: string): void {
+    // Re-insert so the ID moves to the MRU position even if already present.
+    this.seen.delete(id);
     this.seen.add(id);
     while (this.seen.size > this.dedupCacheSize) {
-      const oldest = this.seen.values().next().value;
-      if (oldest === undefined) break;
-      this.seen.delete(oldest);
+      const lru = this.seen.values().next().value;
+      if (lru === undefined) break;
+      this.seen.delete(lru);
     }
+  }
+
+  /** Marks an already-seen ID as most-recently-used (LRU touch on a dedup hit). */
+  private touchSeen(id: string): void {
+    if (this.seen.delete(id)) this.seen.add(id);
   }
 
   /** Schedules a single deferred re-poll using the injectable timer. */
