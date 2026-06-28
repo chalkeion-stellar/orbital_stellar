@@ -1259,6 +1259,28 @@ describe.each([
     });
     expect(event).toBeNull();
   });
+
+  it("rejects payload exceeding maxBodyBytes before HMAC computation", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const event = await verifyFn(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      maxBodyBytes: 10,
+    });
+    expect(event).toBeNull();
+  });
+
+  it("accepts payload within maxBodyBytes limit", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const event = await verifyFn(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      maxBodyBytes: 100_000,
+    });
+    expect(event).toEqual(deliveryEvent);
+  });
 });
 
 describe("pulse-webhooks verifyWebhookRaw", () => {
@@ -1303,6 +1325,32 @@ describe("pulse-webhooks verifyWebhookRaw", () => {
     });
 
     expect(result).toBe(true);
+  });
+
+  it("returns false when payload exceeds maxBodyBytes", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      verifyWebhookRaw(payload, signature, "top-secret", timestamp, {
+        nowMs: Number(timestamp),
+        maxBodyBytes: 10,
+      }),
+    ).toBe(false);
+  });
+
+  it("returns true when payload is within maxBodyBytes limit", () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      verifyWebhookRaw(payload, signature, "top-secret", timestamp, {
+        nowMs: Number(timestamp),
+        maxBodyBytes: 100_000,
+      }),
+    ).toBe(true);
   });
 });
 
@@ -1350,6 +1398,32 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
     const result = await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp);
 
     expect(result).toBe(true);
+  });
+
+  it("returns false when payload exceeds maxBodyBytes", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp, {
+        nowMs: Number(timestamp),
+        maxBodyBytes: 10,
+      }),
+    ).toBe(false);
+  });
+
+  it("returns true when payload is within maxBodyBytes limit", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp, {
+        nowMs: Number(timestamp),
+        maxBodyBytes: 100_000,
+      }),
+    ).toBe(true);
   });
 });
 

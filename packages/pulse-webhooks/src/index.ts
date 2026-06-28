@@ -558,6 +558,17 @@ export class WebhookDelivery {
   }
 }
 
+/**
+ * Verifies webhook signature, parses JSON, and optionally validates the schema.
+ *
+ * @param payload - The raw request body as a UTF-8 string
+ * @param signature - The x-orbital-signature header value
+ * @param secret - Your webhook secret
+ * @param timestamp - The x-orbital-timestamp header value
+ * @param options - Verification options (`maxAgeMs`, `clockSkewMs`, `nowMs`, `version`, `schema`, `maxBodyBytes`)
+ * @param options.maxBodyBytes - Maximum allowed payload size in bytes. Defaults to 100_000 (~100 KB).
+ * @returns Parsed NormalizedEvent if verification succeeds, null otherwise
+ */
 export function verifyWebhook(
   payload: string,
   signature: string,
@@ -588,6 +599,14 @@ export function verifyWebhook(
 /**
  * Verifies webhook signature without parsing JSON.
  * Use when routing the raw body to another consumer (e.g., a queue) to avoid the parse overhead.
+ *
+ * @param payload - The raw request body as a UTF-8 string
+ * @param signature - The x-orbital-signature header value
+ * @param secret - Your webhook secret
+ * @param timestamp - The x-orbital-timestamp header value
+ * @param options - Verification options
+ * @param options.maxBodyBytes - Maximum allowed payload size in bytes. Defaults to 100_000 (~100 KB).
+ * @returns `true` if signature is valid, `false` otherwise
  */
 export function verifyWebhookRaw(
   payload: string,
@@ -596,6 +615,9 @@ export function verifyWebhookRaw(
   timestamp: string,
   options: VerifyWebhookOptions = {},
 ): boolean {
+  const maxBodyBytes = options.maxBodyBytes ?? 100_000;
+  if (Buffer.byteLength(payload, "utf8") > maxBodyBytes) return false;
+
   if (!/^\d+$/.test(timestamp)) return false;
 
   const timestampMs = Number(timestamp);
