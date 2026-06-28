@@ -108,8 +108,12 @@ export async function verifyWebhookEdgeRaw(
 
 /**
  * Verifies a webhook whose body arrives as a ReadableStream using Web Crypto API.
- * The stream is consumed exactly once: chunks are buffered and fed to an HMAC
- * computation incrementally, so the caller never needs to buffer the body separately.
+ * The stream is consumed exactly once, so the caller never needs to buffer the
+ * body separately before calling this function.
+ *
+ * **Trade-off:** The full body is still buffered internally (the Web Crypto API
+ * does not support incremental HMAC). This is purely a consumer-facing convenience
+ * that avoids forcing callers to buffer the stream themselves.
  *
  * @param stream - The raw request body as a ReadableStream<Uint8Array>
  * @param signature - The x-orbital-signature header value
@@ -136,9 +140,12 @@ export async function verifyWebhookEdgeStream(
 
   if (timestampMs > nowMs + clockSkewMs) return null;
 
-  if (options.maxAgeMs !== undefined) {
-    if (timestampMs < nowMs - options.maxAgeMs - clockSkewMs) return null;
-  }
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return null;
+
+  // Enforce maximum body size by reading the stream into a single buffer.
+  // The full body is still buffered internally (see doc trade-off below).
+  const maxBodyBytes = options.maxBodyBytes ?? 100_000;
 
   try {
     const keyData = new TextEncoder().encode(secret);
@@ -150,21 +157,25 @@ export async function verifyWebhookEdgeStream(
       ["sign"],
     );
 
-    // Buffer all chunks from the stream.
+    // Consume the stream incrementally, buffering all chunks.
     const chunks: Uint8Array[] = [];
+    let totalLength = 0;
     const reader = stream.getReader();
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (value) chunks.push(value);
+        if (value) {
+          chunks.push(value);
+          totalLength += value.length;
+          if (totalLength > maxBodyBytes) return null;
+        }
       }
     } finally {
       reader.releaseLock();
     }
 
     // Concatenate into a single buffer.
-    const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
     const bodyBytes = new Uint8Array(totalLength);
     let offset = 0;
     for (const chunk of chunks) {

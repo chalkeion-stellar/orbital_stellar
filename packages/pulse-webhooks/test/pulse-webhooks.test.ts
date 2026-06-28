@@ -13,6 +13,7 @@ import {
   verifyWebhookRaw,
   verifyWebhookEdge,
   verifyWebhookEdgeRaw,
+  verifyWebhookEdgeStream,
   WebhookDelivery,
 } from "../src/index.js";
 
@@ -1350,6 +1351,263 @@ describe("pulse-webhooks verifyWebhookEdgeRaw", () => {
     const result = await verifyWebhookEdgeRaw(payload, signature, "top-secret", timestamp);
 
     expect(result).toBe(true);
+  });
+});
+
+function streamFromString(s: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(s));
+      controller.close();
+    },
+  });
+}
+
+function streamFromChunks(chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
+  });
+}
+
+describe("pulse-webhooks verifyWebhookEdgeStream", () => {
+  it("returns parsed event and body when signature matches timestamped payload", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const stream = streamFromString(payload);
+
+    const result = await verifyWebhookEdgeStream(stream, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+    });
+
+    expect(result).toEqual({ event: deliveryEvent, body: payload });
+  });
+
+  it("accepts multi-chunk stream body", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const mid = Math.floor(payload.length / 2);
+    const stream = streamFromChunks([payload.slice(0, mid), payload.slice(mid)]);
+
+    const result = await verifyWebhookEdgeStream(stream, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+    });
+
+    expect(result).toEqual({ event: deliveryEvent, body: payload });
+  });
+
+  it("accepts explicit v1 version option", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const stream = streamFromString(payload);
+
+    const result = await verifyWebhookEdgeStream(stream, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      version: "v1",
+    });
+
+    expect(result).toEqual({ event: deliveryEvent, body: payload });
+  });
+
+  it("accepts v2 placeholder without changing v1 verification behavior", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const stream = streamFromString(payload);
+
+    const result = await verifyWebhookEdgeStream(stream, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      version: "v2",
+    });
+
+    expect(result).toEqual({ event: deliveryEvent, body: payload });
+  });
+
+  it("returns null when timestamp is missing or invalid", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const signature = signWebhookPayload("top-secret", payload, "1714176000000");
+
+    expect(
+      await verifyWebhookEdgeStream(streamFromString(payload), signature, "top-secret", ""),
+    ).toBeNull();
+    expect(
+      await verifyWebhookEdgeStream(
+        streamFromString(payload),
+        signature,
+        "top-secret",
+        "not-a-number",
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when signature does not match timestamped payload", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      await verifyWebhookEdgeStream(
+        streamFromString(payload),
+        signature,
+        "wrong-secret",
+        timestamp,
+      ),
+    ).toBeNull();
+    expect(
+      await verifyWebhookEdgeStream(
+        streamFromString(payload),
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "top-secret",
+        timestamp,
+      ),
+    ).toBeNull();
+    expect(
+      await verifyWebhookEdgeStream(
+        streamFromString(payload),
+        signature,
+        "top-secret",
+        "1714176000001",
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when body exceeds maxBodyBytes", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    const result = await verifyWebhookEdgeStream(
+      streamFromString(payload),
+      signature,
+      "top-secret",
+      timestamp,
+      { nowMs: Number(timestamp), maxBodyBytes: 10 },
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("accepts timestamp within configured clock skew window", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const nowMs = 1_714_176_000_000;
+    const timestamp = String(nowMs + 20_000);
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const stream = streamFromString(payload);
+
+    const result = await verifyWebhookEdgeStream(stream, signature, "top-secret", timestamp, {
+      nowMs,
+      maxAgeMs: 60_000,
+      clockSkewMs: 30_000,
+    });
+
+    expect(result).toEqual({ event: deliveryEvent, body: payload });
+  });
+
+  it("rejects timestamp outside configured skew and maxAge window", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const nowMs = 1_714_176_000_000;
+    const tooFarFutureTs = String(nowMs + 30_001);
+    const tooOldTs = String(nowMs - 60_000 - 30_001);
+
+    const futureSig = signWebhookPayload("top-secret", payload, tooFarFutureTs);
+    const oldSig = signWebhookPayload("top-secret", payload, tooOldTs);
+
+    expect(
+      await verifyWebhookEdgeStream(
+        streamFromString(payload),
+        futureSig,
+        "top-secret",
+        tooFarFutureTs,
+        { nowMs, maxAgeMs: 60_000, clockSkewMs: 30_000 },
+      ),
+    ).toBeNull();
+    expect(
+      await verifyWebhookEdgeStream(streamFromString(payload), oldSig, "top-secret", tooOldTs, {
+        nowMs,
+        maxAgeMs: 60_000,
+        clockSkewMs: 30_000,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for malformed JSON payload", async () => {
+    const payload = "{ invalid json }";
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+
+    expect(
+      await verifyWebhookEdgeStream(streamFromString(payload), signature, "top-secret", timestamp),
+    ).toBeNull();
+  });
+
+  it("returns null when schema validation fails", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const stream = streamFromString(payload);
+
+    const result = await verifyWebhookEdgeStream(stream, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: (evt) => evt.type === "payment.sent",
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("returns event when schema validation succeeds", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const stream = streamFromString(payload);
+
+    const result = await verifyWebhookEdgeStream(stream, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: (evt) => evt.type === "payment.received",
+    });
+
+    expect(result).toEqual({ event: deliveryEvent, body: payload });
+  });
+
+  it("returns null when schema validator throws", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const stream = streamFromString(payload);
+
+    const result = await verifyWebhookEdgeStream(stream, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      schema: () => {
+        throw new Error("validator error");
+      },
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when stream errors", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("stream error"));
+      },
+    });
+
+    const result = await verifyWebhookEdgeStream(
+      stream,
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      "top-secret",
+      "1714176000000",
+    );
+
+    expect(result).toBeNull();
   });
 });
 
