@@ -703,8 +703,13 @@ export class EventEngine {
   /**
    * Stops the SSE stream and all active watchers.
    * Cleans up all resources and resets reconnection state.
+   *
+   * Resolves only once the Soroban subscriber's graceful shutdown completes —
+   * i.e. after any in-flight `getEvents` poll has been aborted and settled — so
+   * that no further Soroban events are emitted once the returned promise
+   * resolves (#636).
    */
-  stop(): void {
+  async stop(): Promise<void> {
     this.clearReconnectTimer();
     this.pendingReconnectSuccessAttempt = null;
     this.reconnectAttempt = 0;
@@ -715,7 +720,7 @@ export class EventEngine {
     this.pausedSources.clear();
 
     if (this.sorobanSubscriber) {
-      this.sorobanSubscriber.stop();
+      await this.sorobanSubscriber.stop();
     }
 
     this.notifyWatchers("engine.stopped", {
