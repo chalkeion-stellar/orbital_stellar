@@ -384,8 +384,7 @@ export type NormalizedEvent = (
   | LiquidityPoolDepositEvent
   | LiquidityPoolWithdrawEvent
   | TrustAuthEvent
-  | ContractInvokedEvent
-  | ContractEmittedEvent
+  | ContractEvent
 ) & {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
@@ -453,6 +452,22 @@ export interface AbiRegistryClientLike {
   getSpec(contractId: string): Promise<unknown>;
 }
 
+export type SorobanConfig = {
+  /** Soroban RPC endpoint used for live contract-event polling. */
+  rpcUrl: string;
+  /** Optional headers forwarded to the Soroban RPC endpoint. */
+  rpcHeaders?: Record<string, string>;
+  /** Interval between Soroban polls in milliseconds. Defaults to 2,000. */
+  pollIntervalMs?: number;
+  /** Number of ledgers to look back from the latest ledger on the first poll. Defaults to 0. */
+  startLedgerLookback?: number;
+  /**
+   * Pagination limit for each Soroban RPC `getEvents` call.
+   * Must be an integer from 1 through 10,000. Defaults to 100.
+   */
+  pageLimit?: number;
+};
+
 export type CoreConfig = {
   /** The Stellar network to connect to. */
   network: Network;
@@ -470,10 +485,7 @@ export type CoreConfig = {
   /** Optional ABI registry client used to enrich `contract.emitted` events with `decodedData`. */
   abiRegistry?: AbiRegistryClientLike;
   /** Soroban RPC configuration. */
-  soroban?: {
-    /** Pagination limit for RPC `getEvents` calls. Must be 1–10,000. Defaults to 100. */
-    pageLimit?: number;
-  };
+  soroban?: SorobanConfig;
 };
 
 // Error class for invalid network validation
@@ -557,6 +569,7 @@ export type ContractEmittedEvent = {
   raw?: RawSorobanEvent;
 };
 
+/** Discriminated union of every normalized Soroban contract event. */
 export type ContractEvent = ContractInvokedEvent | ContractEmittedEvent;
 
 export type DecodeFailedNotification = {
