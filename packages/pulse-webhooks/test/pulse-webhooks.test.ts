@@ -1,8 +1,11 @@
 import { createHmac } from "crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const dnsLookupMock = vi.hoisted(() => vi.fn());
+vi.mock("dns/promises", () => ({ lookup: dnsLookupMock }));
+
 import { Watcher } from "@orbital-stellar/pulse-core";
-import type { WebhookMetrics } from "../src/index.js";
+import type { RetryQueue, WebhookMetrics } from "../src/index.js";
 import {
   DeadLetterStore,
   MemoryRetryQueue,
@@ -26,7 +29,14 @@ const deliveryEvent = {
 async function flushAsyncWork(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
+
+beforeEach(() => {
+  dnsLookupMock.mockReset();
+  dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+});
 
 function signWebhookPayload(secret: string, payload: string, timestamp: string): string {
   return createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
@@ -43,7 +53,7 @@ describe("pulse-webhooks WebhookDelivery", () => {
     vi.restoreAllMocks();
   });
 
-  it("delivers each event to every configured URL", () => {
+  it("delivers each event to every configured URL", async () => {
     vi.setSystemTime(new Date("2026-04-27T00:00:00.000Z"));
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal("fetch", fetchMock);
@@ -64,6 +74,7 @@ describe("pulse-webhooks WebhookDelivery", () => {
     });
 
     watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -246,6 +257,123 @@ describe("pulse-webhooks WebhookDelivery", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(failedHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    "https://[fc00::1]/hook",
+    "https://[fdff:ffff::1]/hook",
+    "https://[fe80::1]/hook",
+    "https://[febf:ffff::1]/hook",
+    "https://[::ffff:10.0.0.1]/hook",
+    "https://[::ffff:127.0.0.1]/hook",
+    "https://[::ffff:172.31.255.255]/hook",
+    "https://[::ffff:192.168.1.1]/hook",
+    "https://[::ffff:169.254.1.1]/hook",
+  ])("blocks private IPv6 destination %s", async (url) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, { url, secret: "top-secret" });
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(dnsLookupMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          url,
+          error: "Webhook URL points to a blocked private address",
+        }),
+      }),
+    );
+  });
+
+  it.each([
+    "https://[fbff:ffff::1]/hook",
+    "https://[fe7f:ffff::1]/hook",
+    "https://[fec0::1]/hook",
+    "https://[::ffff:8.8.8.8]/hook",
+  ])("allows IPv6 destination outside the blocked ranges %s", async (url) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    new WebhookDelivery(watcher, { url, secret: "top-secret" });
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks a hostname when any DNS answer is private IPv6", async () => {
+    dnsLookupMock.mockResolvedValue([
+      { address: "2606:4700:4700::1111", family: 6 },
+      { address: "fe80::1234", family: 6 },
+    ]);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const url = "https://hooks.example.com/stellar";
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, { url, secret: "top-secret" });
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    expect(dnsLookupMock).toHaveBeenCalledWith("hooks.example.com", {
+      all: true,
+      verbatim: true,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          error: "Webhook URL points to a blocked private address",
+        }),
+      }),
+    );
+  });
+
+  it("re-checks DNS before a retry and blocks a rebound private address", async () => {
+    dnsLookupMock
+      .mockResolvedValueOnce([{ address: "2606:4700:4700::1111", family: 6 }])
+      .mockResolvedValueOnce([{ address: "fc00::1234", family: 6 }]);
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, {
+      url: "https://hooks.example.com/stellar",
+      secret: "top-secret",
+      retries: 2,
+      random: () => 0,
+    });
+    watcher.emit("*", deliveryEvent);
+    await flushAsyncWork();
+
+    vi.advanceTimersByTime(0);
+    await flushAsyncWork();
+
+    expect(dnsLookupMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(failedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        raw: expect.objectContaining({
+          error: "Webhook URL points to a blocked private address",
+          attempts: 2,
+        }),
+      }),
+    );
   });
 
   it("keeps delivering to other URLs when one URL fails", async () => {
@@ -1481,5 +1609,254 @@ describe("pulse-webhooks DeadLetterStore", () => {
     expect(failedCall.raw?.dlqId).toBe(entries[0]?.id);
 
     vi.useRealTimers();
+  });
+});
+
+describe("pulse-webhooks WebhookDelivery with retryQueue", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function mockQueue(): RetryQueue {
+    return {
+      enqueue: vi.fn().mockResolvedValue(undefined),
+      dequeue: vi.fn().mockResolvedValue(null),
+      ack: vi.fn().mockResolvedValue(undefined),
+      nack: vi.fn().mockResolvedValue(undefined),
+      evictNewest: vi.fn().mockResolvedValue(null),
+      size: vi.fn().mockResolvedValue(0),
+    };
+  }
+
+  it("enqueues retry instead of setTimeout when retryQueue is configured", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const queue = mockQueue();
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 2,
+      random: () => 0.5,
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 10_000,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(queue.enqueue).toHaveBeenCalledTimes(1);
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "https://example.com/hook",
+        attempt: 2,
+        event: deliveryEvent,
+        nextRetryAt: expect.any(Number),
+      }),
+    );
+  });
+
+  it("dequeues and delivers a queued retry record via the poller", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const record = {
+      id: "rec_1",
+      event: deliveryEvent,
+      url: "https://example.com/hook",
+      attempt: 2,
+      nextRetryAt: Date.now(),
+    };
+
+    let callCount = 0;
+    const queue = mockQueue();
+    vi.mocked(queue.dequeue).mockImplementation(async () => {
+      callCount++;
+      return callCount === 1 ? record : null;
+    });
+
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 100,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(queue.dequeue).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(queue.ack).toHaveBeenCalledWith("rec_1");
+  });
+
+  it("calls nack with backoff delay when delivery fails and retries remain", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const record = {
+      id: "rec_1",
+      event: deliveryEvent,
+      url: "https://example.com/hook",
+      attempt: 1,
+      nextRetryAt: Date.now(),
+    };
+
+    let callCount = 0;
+    const queue = mockQueue();
+    vi.mocked(queue.dequeue).mockImplementation(async () => {
+      callCount++;
+      return callCount === 1 ? record : null;
+    });
+
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 3,
+      random: () => 0.5,
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 100,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(queue.nack).toHaveBeenCalledTimes(1);
+    // backoff(1, 0.5) = 500ms for exponentialJittered
+    expect(queue.nack).toHaveBeenCalledWith("rec_1", 500);
+  });
+
+  it("acks and emits failure when all retries are exhausted from the queue", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const record = {
+      id: "rec_1",
+      event: deliveryEvent,
+      url: "https://example.com/hook",
+      attempt: 3,
+      nextRetryAt: Date.now(),
+    };
+
+    let callCount = 0;
+    const queue = mockQueue();
+    vi.mocked(queue.dequeue).mockImplementation(async () => {
+      callCount++;
+      return callCount === 1 ? record : null;
+    });
+
+    const watcher = new Watcher("GABC");
+    const failedHandler = vi.fn();
+    watcher.on("webhook.failed", failedHandler);
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 3,
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 100,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(queue.ack).toHaveBeenCalledWith("rec_1");
+    expect(failedHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not use setTimeout for retries when retryQueue is configured", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    const queue = mockQueue();
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 2,
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 10_000,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // setTimeout should only be called for the abort timer (deliveryTimeoutMs), not retries
+    const retryTimeoutCalls = setTimeoutSpy.mock.calls.filter((args) => {
+      const delay = args[1] as number;
+      return delay !== 10000; // exclude the abort timer
+    });
+    expect(retryTimeoutCalls).toHaveLength(0);
+  });
+
+  it("continues to use setTimeout retries when retryQueue is not configured", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retries: 2,
+      random: () => 0.5,
+    });
+
+    watcher.emit("*", deliveryEvent);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const retryTimeoutCalls = setTimeoutSpy.mock.calls.filter((args) => {
+      const delay = args[1] as number;
+      return delay !== 10000; // exclude the abort timer
+    });
+    expect(retryTimeoutCalls).toHaveLength(1);
+    expect(retryTimeoutCalls[0][1]).toBe(500); // exponentialJittered(1, 0.5)
+  });
+
+  it("stops the poller when the watcher stops", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const queue = mockQueue();
+    vi.mocked(queue.dequeue).mockResolvedValue(null);
+
+    const watcher = new Watcher("GABC");
+
+    new WebhookDelivery(watcher, {
+      url: "https://example.com/hook",
+      secret: "top-secret",
+      retryQueue: queue,
+      retryQueuePollIntervalMs: 100,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(queue.dequeue).toHaveBeenCalledTimes(1);
+
+    watcher.stop();
+
+    const dequeueCountBefore = vi.mocked(queue.dequeue).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(vi.mocked(queue.dequeue).mock.calls.length).toBe(dequeueCountBefore);
   });
 });
