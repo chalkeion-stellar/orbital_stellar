@@ -270,7 +270,13 @@ export class EventEngine {
             inMemoryCursor = cursor;
             return;
           }
-          await this.cursorStore.set(sorobanCursorKey, cursor);
+          if (this.isCursorStoreUnhealthy) return;
+          try {
+            await this.cursorStore.set(sorobanCursorKey, cursor);
+            this.consecutiveCursorFailures = 0;
+          } catch (err) {
+            this.handleCursorFailure(err);
+          }
         },
       };
 
@@ -904,9 +910,12 @@ export class EventEngine {
       return;
     }
 
+    if (this.isCursorStoreUnhealthy) return;
+
     try {
       await this.cursorStore.set(this.streamKey, cursor);
       this.consecutiveCursorFailures = 0;
+      this.isCursorStoreUnhealthy = false;
     } catch (err) {
       this.handleCursorFailure(err);
     }
