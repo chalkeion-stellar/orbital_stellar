@@ -40,6 +40,11 @@ export type EventState<T extends NormalizedEvent = NormalizedEvent> = {
   connected: boolean;
   error: string | null;
   lastEventAt: string | null;
+  /** False only during the brief window after a reconnect where the stream is
+   *  replaying events the browser requested via Last-Event-ID. Becomes true
+   *  again as soon as the first event is delivered, or immediately on a fresh
+   *  connection where no prior event ID was recorded. */
+  caughtUp: boolean;
 };
 
 function useVisibilityState(hideAfterMs = 30000): boolean {
@@ -160,11 +165,16 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
     connected: false,
     error: null,
     lastEventAt: null,
+    caughtUp: true,
   });
+
+  const lastEventIdRef = useRef("");
 
   const isActive = useVisibilityState(hideAfterMs ?? 30000);
 
   useEffect(() => {
+    lastEventIdRef.current = "";
+
     if (!isActive) {
       setState((prev) => ({ ...prev, connected: false }));
       return;
@@ -180,7 +190,15 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
       },
       {
         onOpen: () => {
-          setState((prev) => ({ ...prev, connected: true, error: null }));
+          setState((prev) => ({
+            ...prev,
+            connected: true,
+            error: null,
+            caughtUp: !lastEventIdRef.current,
+          }));
+        },
+        onEventId: (id) => {
+          lastEventIdRef.current = id;
         },
         onEvent: (incoming) => {
           onEventRef.current?.(incoming);
@@ -198,6 +216,7 @@ export function useStellarEvent<T extends NormalizedEvent = NormalizedEvent>(
             ...prev,
             event: incoming as T,
             lastEventAt: incoming.timestamp ?? null,
+            caughtUp: true,
           }));
         },
         onParseError: () => {
@@ -408,11 +427,16 @@ export function useContractEvent<
     connected: false,
     error: null,
     lastEventAt: null,
+    caughtUp: true,
   });
+
+  const lastEventIdRef = useRef("");
 
   const isActive = useVisibilityState(hideAfterMs ?? 30000);
 
   useEffect(() => {
+    lastEventIdRef.current = "";
+
     if (!isActive) {
       setState((prev) => ({ ...prev, connected: false }));
       return;
@@ -422,7 +446,15 @@ export function useContractEvent<
       { serverUrl, contractId, topics, token: currentToken, withCredentials },
       {
         onOpen: () => {
-          setState((prev) => ({ ...prev, connected: true, error: null }));
+          setState((prev) => ({
+            ...prev,
+            connected: true,
+            error: null,
+            caughtUp: !lastEventIdRef.current,
+          }));
+        },
+        onEventId: (id) => {
+          lastEventIdRef.current = id;
         },
         onEvent: (incoming) => {
           onEventRef.current?.(incoming);
@@ -439,6 +471,7 @@ export function useContractEvent<
             ...prev,
             event: incoming as unknown as T,
             lastEventAt: incoming.timestamp ?? null,
+            caughtUp: true,
           }));
         },
         onParseError: () => {
@@ -573,7 +606,13 @@ export function useStellarAddresses<T extends NormalizedEvent = NormalizedEvent>
   const [states, setStates] = useState<Record<string, EventState<T>>>(() => {
     const initial: Record<string, EventState<T>> = {};
     for (const addr of addresses) {
-      initial[addr] = { event: null, connected: false, error: null, lastEventAt: null };
+      initial[addr] = {
+        event: null,
+        connected: false,
+        error: null,
+        lastEventAt: null,
+        caughtUp: true,
+      };
     }
     return initial;
   });
@@ -601,7 +640,11 @@ export function useStellarAddresses<T extends NormalizedEvent = NormalizedEvent>
 
   const [tokenRefreshKey, setTokenRefreshKey] = useState(0);
 
+  const lastEventIdMapRef = useRef<Map<string, string>>(new Map());
+
   useEffect(() => {
+    lastEventIdMapRef.current.clear();
+
     if (addresses.length === 0) return;
 
     // Normalise the event-type list once for all subscriptions.
@@ -614,8 +657,16 @@ export function useStellarAddresses<T extends NormalizedEvent = NormalizedEvent>
           onOpen: () => {
             setStates((prev) => ({
               ...prev,
-              [addr]: { ...prev[addr]!, connected: true, error: null },
+              [addr]: {
+                ...prev[addr]!,
+                connected: true,
+                error: null,
+                caughtUp: !lastEventIdMapRef.current.get(addr),
+              },
             }));
+          },
+          onEventId: (id) => {
+            lastEventIdMapRef.current.set(addr, id);
           },
           onEvent: (incoming) => {
             onEventRef.current?.(addr, incoming);
@@ -637,6 +688,7 @@ export function useStellarAddresses<T extends NormalizedEvent = NormalizedEvent>
                 ...prev[addr]!,
                 event: incoming as T,
                 lastEventAt: incoming.timestamp ?? null,
+                caughtUp: true,
               },
             }));
           },

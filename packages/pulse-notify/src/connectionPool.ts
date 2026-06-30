@@ -13,6 +13,8 @@ type ConnectionSubscriber = {
   onParseError: () => void;
   onError: () => void;
   onAuthExpired?: () => void;
+  /** Called with the SSE `id:` field value when non-empty; enables Last-Event-ID catch-up tracking. */
+  onEventId?: (id: string) => void;
 };
 
 type ConnectionEntry = {
@@ -108,7 +110,11 @@ export function acquireEventConnection(key: ConnectionKey, subscriber: Connectio
           return;
         }
         const event = data as NormalizedEvent;
-        notifySubscribers(newEntry, (current) => current.onEvent(event));
+        const id = message.lastEventId;
+        notifySubscribers(newEntry, (current) => {
+          if (id) current.onEventId?.(id);
+          current.onEvent(event);
+        });
         withDevtools((mod) => {
           if (newEntry.devId) mod.updateConnection(newEntry.devId, { lastEvent: Date.now() });
         });
@@ -257,7 +263,11 @@ export function acquireContractEventConnection(
           return;
         }
         const event = data as NormalizedEvent;
-        notifySubscribers(newEntry, (cur) => cur.onEvent(event));
+        const id = message.lastEventId;
+        notifySubscribers(newEntry, (cur) => {
+          if (id) cur.onEventId?.(id);
+          cur.onEvent(event);
+        });
         withDevtools((mod) => {
           if (newEntry.devId) mod.updateConnection(newEntry.devId, { lastEvent: Date.now() });
         });
