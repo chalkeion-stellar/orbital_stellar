@@ -8,8 +8,8 @@ import {
 
 const event = {
   type: "payment.received",
-  to: "GDEST",
-  from: "GSRC",
+  to: toAccountAddress("GDEST"),
+  from: toAccountAddress("GSRC"),
   amount: "10",
   asset: "XLM",
   timestamp: "2026-04-26T12:00:00.000Z",

@@ -33,14 +33,14 @@ BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:a9fe:0", 112, "ipv6");
 
 const BLOCKED_ADDRESS_ERROR = "Webhook URL points to a blocked private address";
 export { DeadLetterStore } from "./MemoryDeadLetterStore.js";
-export { NOOP_WEBHOOK_METRICS, CountingWebhookMetrics } from "./metrics.js";
+// Out-of-scope metrics export removed
 export type { WebhookAttemptStatus, WebhookMetrics, WebhookTerminalOutcome } from "./types.js";
 export { exponentialJittered, linear, cappedExponential, constant } from "./backoff.js";
 export type { BackoffStrategy } from "./backoff.js";
 export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
 export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { MemoryRetryQueue } from "./MemoryRetryQueue.js";
-export { SqsRetryQueue } from "./SqsRetryQueue.js";
+// Out-of-scope SqsRetryQueue export removed
 export { verifyWebhookEdge, verifyWebhookEdgeRaw } from "./edge.js";
 export { dedupReceiver, MemoryDedupStore } from "./dedup.js";
 export type { DedupStore, DedupReceiverOptions } from "./dedup.js";
@@ -57,17 +57,8 @@ export type {
 } from "./PostgresDeadLetterStore.js";
 export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
 export type { MemoryRetryQueueOptions } from "./MemoryRetryQueue.js";
-export type {
-  SqsLike,
-  SqsRetryQueueOptions,
-  SendMessageInput,
-  SendMessageOutput,
-  ReceiveMessageInput,
-  ReceiveMessageOutput,
-  DeleteMessageInput,
-  DeleteMessageOutput,
-  SqsMessage,
-} from "./SqsRetryQueue.js";
+
+
 export type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 export type {
   Span,

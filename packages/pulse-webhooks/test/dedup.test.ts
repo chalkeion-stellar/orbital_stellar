@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { vi } from "vitest";
 
-import { dedupReceiver, MemoryDedupStore } from "../src/index.js";
+import { dedupReceiver, MemoryDedupStore, toAccountAddress } from "../src/index.js";
 import type { DedupStore } from "../src/index.js";
 
 function makeEvent(id: string) {
   return {
-    type: "payment.received" as const,
-    to: "GDEST",
-    from: "GSRC",
-    amount: "10",
-    asset: "XLM",
-    timestamp: "2026-04-26T12:00:00.000Z",
-    raw: { id },
+    type: "payment.received",
+  to: toAccountAddress("GDEST"),
+  from: toAccountAddress("GSRC"),
+  amount: "10",
+  asset: "XLM",
+  timestamp: "2026-04-26T12:00:00.000Z",
+  raw: { id },
   };
 }
 

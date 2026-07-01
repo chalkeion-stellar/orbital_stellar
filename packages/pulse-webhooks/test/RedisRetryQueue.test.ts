@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
-import { RedisRetryQueue, type RedisLike, type RetryRecord } from "../src/index.js";
+import { RedisRetryQueue, type RedisLike, type RetryRecord, toAccountAddress } from "../src/index.js";
 
 type SortedSetMember = {
   score: number;
@@ -73,8 +73,8 @@ class MockRedis implements RedisLike {
 
 const event: NormalizedEvent = {
   type: "payment.received",
-  to: "GDEST",
-  from: "GSRC",
+  to: toAccountAddress("GDEST"),
+  from: toAccountAddress("GSRC"),
   amount: "10",
   asset: "XLM",
   timestamp: "2026-04-26T12:00:00.000Z",
