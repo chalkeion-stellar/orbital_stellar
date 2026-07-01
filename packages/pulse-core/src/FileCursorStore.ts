@@ -1,7 +1,10 @@
-import { promises as fsPromises } from "fs";
+import { promises as fsPromises, fsync } from "fs";
+import { promisify } from "util";
 import path from "path";
 import { CursorStore } from "./CursorStore.js";
 import type { Logger } from "./index.js";
+
+const fsyncAsync = promisify(fsync);
 
 function safeFilename(streamKey: string): string {
   return encodeURIComponent(streamKey) + ".json";
@@ -72,8 +75,7 @@ export class FileCursorStore extends CursorStore {
       const dirFd = await fsPromises.open(this.dir, "r");
       try {
         // Node's fsPromises doesn't expose fsync on DirHandle, so use fs.fsync with numeric fd
-        // @ts-expect-error - access internal fd
-        await fsPromises.fsync((dirFd as any).fd);
+        await fsyncAsync((dirFd as any).fd);
       } catch (_) {
         // ignore
       } finally {

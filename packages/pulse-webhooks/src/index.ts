@@ -207,11 +207,11 @@ export class WebhookDelivery {
     }
 
     const resolvedHostnameError = await this.validateResolvedHostname(url);
-    if (this.watcher.stopped) return;
+    if (this.watcher.stopped) return { ok: false, error: "stopped", terminal: true };
 
     if (resolvedHostnameError) {
       this.emitFailure(event, url, resolvedHostnameError, attempt);
-      return;
+      return { ok: false, error: resolvedHostnameError, terminal: true };
     }
 
     const payload = JSON.stringify(event);
