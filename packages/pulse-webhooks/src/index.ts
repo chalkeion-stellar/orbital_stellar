@@ -234,7 +234,6 @@ export class WebhookDelivery {
 
     const builtInValidationError = this.validateUrl(url);
     if (builtInValidationError) {
-      this.emitFailure(event, url, builtInValidationError, attempt);
       return { ok: false, error: builtInValidationError, terminal: true };
     }
 
@@ -256,8 +255,8 @@ export class WebhookDelivery {
     if (this.watcher.stopped) return { ok: false, error: "stopped", terminal: true };
 
     if (resolvedHostnameError) {
-      this.emitFailure(event, url, resolvedHostnameError, attempt);
-      return { ok: false, error: resolvedHostnameError, terminal: true };
+      const isTerminal = resolvedHostnameError === BLOCKED_ADDRESS_ERROR;
+      return { ok: false, error: resolvedHostnameError, terminal: isTerminal };
     }
 
     const payload = JSON.stringify(event);

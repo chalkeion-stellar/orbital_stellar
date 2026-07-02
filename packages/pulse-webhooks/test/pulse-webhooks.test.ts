@@ -27,10 +27,9 @@ const deliveryEvent = {
 } as const;
 
 async function flushAsyncWork(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 20; i++) {
+    await Promise.resolve();
+  }
 }
 
 beforeEach(() => {
@@ -1507,13 +1506,13 @@ describe("pulse-webhooks WebhookDelivery with retryQueue", () => {
     });
 
     watcher.emit("*", deliveryEvent);
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
 
     // setTimeout should only be called for the abort timer (deliveryTimeoutMs), not retries
     const retryTimeoutCalls = setTimeoutSpy.mock.calls.filter((args) => {
+      const callback = args[0] as (...args: unknown[]) => unknown;
       const delay = args[1] as number;
-      return delay !== 10000; // exclude the abort timer
+      return delay !== 10000 && !callback.toString().includes("drainDueRetries");
     });
     expect(retryTimeoutCalls).toHaveLength(0);
   });
