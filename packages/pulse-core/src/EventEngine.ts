@@ -274,6 +274,7 @@ export class EventEngine {
           try {
             await this.cursorStore.set(sorobanCursorKey, cursor);
             this.consecutiveCursorFailures = 0;
+            this.isCursorStoreUnhealthy = false;
           } catch (err) {
             this.handleCursorFailure(err);
           }
