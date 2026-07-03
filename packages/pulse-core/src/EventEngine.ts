@@ -1320,10 +1320,7 @@ export class EventEngine {
     };
   }
 
-  private normalizeManageData(
-    r: Record<string, unknown>,
-    raw: unknown,
-  ): Raw<DataEvent> | null {
+  private normalizeManageData(r: Record<string, unknown>, raw: unknown): Raw<DataEvent> | null {
     if (typeof r.source_account !== "string" || r.source_account === "") {
       this.log.warn("[pulse-core] normalize() dropping manage_data record.", {
         field: "source_account",

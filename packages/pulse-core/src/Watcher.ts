@@ -100,10 +100,7 @@ export class Watcher extends EventEmitter {
     eventType: K,
     handler: (event: WatcherEventMap[K]) => void,
   ): this;
-  on(
-    eventType: string,
-    handler: (event: WatcherEvent) => void,
-  ): this;
+  on(eventType: string, handler: (event: WatcherEvent) => void): this;
   on(eventType: string, handler: (event: any) => void): this {
     if (this._stopped) {
       const message = `[pulse-core] Watcher.on("${eventType}") called after stop() for address ${this.address}. Listener was not registered.`;
