@@ -155,6 +155,12 @@ export class EventEngine {
     string,
     { watcher: Watcher; filters: ContractSubscriptionFilter[] }
   > = new Map();
+  /**
+   * Registry for config-object-based contract subscriptions.
+   * Keyed by {@link stableFilterKey} — the same canonical key used by
+   * `subscribeContract(config)` for deduplication and by
+   * `unsubscribeContract(config)` for lookup.
+   */
   private contractConfigRegistry: Map<string, Watcher> = new Map();
   private subscriptionNames: Map<string, string> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
