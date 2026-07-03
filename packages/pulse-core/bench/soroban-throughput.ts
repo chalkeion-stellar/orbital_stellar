@@ -1,4 +1,4 @@
-import { EventEngine } from "../src/index.js";
+import { EventEngine } from "../src/EventEngine.js";
 
 type EngineBenchInternals = {
   normalize: (record: unknown) => unknown;
