@@ -338,9 +338,53 @@ watcher.on("webhook.dropped", (event) => {
   - `x-orbital-signature`: hex-encoded HMAC-SHA256 of `x-orbital-timestamp + "." + raw body`
   - `x-orbital-timestamp`: Unix epoch milliseconds as a string (for example: `1714176000000`)
   - `x-orbital-attempt`: `1`, `2`, … up to `retries`
+  - `x-orbital-delivery-id`: UUID v4, unique per event-URL pair and stable across retries. Use this for receiver-side idempotency (deduplication). See [Idempotency / deduplication](#idempotency--deduplication).
 - **Success:** Any 2xx response
 - **Retry:** Any non-2xx, network error, or timeout. Backoff is exponential: `2^(attempt-1) × 1000 ms`.
 - **Failure:** After `retries` unsuccessful attempts for a given URL, the watcher emits `webhook.failed` with the original event in `raw.originalEvent` and the failed target in `raw.url`.
+
+## Idempotency / deduplication
+
+Retries of the same delivery carry the same `x-orbital-delivery-id`, allowing receivers to safely deduplicate. The UUID v4 is computed once per (event, URL) pair and reused on every subsequent attempt. A new event — even with the same payload — gets a new ID.
+
+### Receiver-side dedup (built-in)
+
+The `dedupReceiver` helper wraps your handler to skip duplicate deliveries:
+
+```ts
+import { dedupReceiver, MemoryDedupStore } from "@orbital-stellar/pulse-webhooks";
+import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
+
+const seen = new MemoryDedupStore();
+
+const handler = dedupReceiver(
+  async (event: NormalizedEvent) => {
+    // Process exactly once per delivery ID
+    await processEvent(event);
+  },
+  seen,
+  {
+    // Extract delivery ID from the x-orbital-delivery-id header.
+    // The default extractor uses event.raw.id — override to use
+    // the delivery ID header instead:
+    idExtractor: (event) =>
+      (event.raw as Record<string, string>)["x-orbital-delivery-id"],
+  },
+);
+
+watcher.on("*", handler);
+```
+
+`MemoryDedupStore` is ephemeral (in-memory). For durable dedup across restarts, implement `DedupStore` with a persistent backend (Redis, Postgres, etc.):
+
+```ts
+export interface DedupStore {
+  seen(id: string): Promise<boolean>;
+  mark(id: string): Promise<void>;
+}
+```
+
+**Note:** Keep the dedup window bounded — use TTL-based stores (e.g., Redis `SET` with `EX`) to expire old IDs after the replay-window duration (default 5 minutes).
 
 ## Dead Letter Queue (DLQ)
 
@@ -454,6 +498,7 @@ Orbital provides a hardened delivery pipeline for high-stakes financial events. 
 | :--- | :--- | :--- |
 | **Authenticity** | HMAC-SHA256 signature (`x-orbital-signature`) | Payload tampering |
 | **Integrity** | `timestamp . payload` signing bubble | Replay attacks (when window-checked) |
+| **Idempotency** | `x-orbital-delivery-id` (UUID v4) per event-URL pair | Duplicate processing on retry |
 | **Side-channel defense** | `crypto.timingSafeEqual` comparison | Timing attacks on signatures |
 | **SSRF Protection** | RFC 1918 & loopback block-list | Internal network exfiltration |
 | **DNS Rebinding defense** | Pre-delivery IP validation | Validation-time vs Request-time IP swaps |
