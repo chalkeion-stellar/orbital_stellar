@@ -10,7 +10,8 @@ import { DEFAULT_CLOCK_SKEW_MS, DEFAULT_MAX_AGE_MS } from "./types.js";
  * @param signature - The x-orbital-signature header value
  * @param secret - Your webhook secret
  * @param timestamp - The x-orbital-timestamp header value
- * @param options - Optional replay-window options (`maxAgeMs`, `clockSkewMs`, `nowMs`)
+ * @param options - Optional replay-window options (`maxAgeMs`, `clockSkewMs`, `nowMs`, `maxBodyBytes`)
+ * @param options.maxBodyBytes - Maximum allowed payload size in bytes. Defaults to 100_000 (~100 KB).
  * @returns Parsed NormalizedEvent if verification succeeds, null otherwise
  */
 export async function verifyWebhookEdge(
@@ -51,7 +52,8 @@ export async function verifyWebhookEdge(
  * @param signature - The x-orbital-signature header value
  * @param secret - Your webhook secret
  * @param timestamp - The x-orbital-timestamp header value
- * @param options - Optional replay-window options
+ * @param options - Optional replay-window options (`maxAgeMs`, `clockSkewMs`, `nowMs`, `maxBodyBytes`)
+ * @param options.maxBodyBytes - Maximum allowed payload size in bytes. Defaults to 100_000 (~100 KB).
  * @returns Promise<true> if signature is valid, Promise<false> otherwise
  */
 export async function verifyWebhookEdgeRaw(
@@ -61,6 +63,10 @@ export async function verifyWebhookEdgeRaw(
   timestamp: string,
   options: VerifyWebhookOptions = {},
 ): Promise<boolean> {
+  const maxBodyBytes = options.maxBodyBytes ?? 100_000;
+  const payloadBytes = new TextEncoder().encode(payload).length;
+  if (payloadBytes > maxBodyBytes) return false;
+
   if (!/^\d+$/.test(timestamp)) return false;
 
   const timestampMs = Number(timestamp);
@@ -119,7 +125,8 @@ export async function verifyWebhookEdgeRaw(
  * @param signature - The x-orbital-signature header value
  * @param secret - Your webhook secret
  * @param timestamp - The x-orbital-timestamp header value
- * @param options - Optional replay-window options (`maxAgeMs`, `clockSkewMs`, `nowMs`)
+ * @param options - Optional replay-window options (`maxAgeMs`, `clockSkewMs`, `nowMs`, `maxBodyBytes`)
+ * @param options.maxBodyBytes - Maximum allowed payload size in bytes. Defaults to 100_000 (~100 KB).
  * @returns `{ event, body }` where `event` is the parsed NormalizedEvent and `body`
  *          is the buffered UTF-8 string, or `null` if verification fails
  */

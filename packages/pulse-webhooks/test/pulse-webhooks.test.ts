@@ -1025,6 +1025,28 @@ describe.each([
     });
     expect(result).toBe(true);
   });
+
+  it("returns false when payload exceeds maxBodyBytes", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const result = await verifyRawFn(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      maxBodyBytes: 10,
+    });
+    expect(result).toBe(false);
+  });
+
+  it("returns true when payload is within maxBodyBytes limit", async () => {
+    const payload = JSON.stringify(deliveryEvent);
+    const timestamp = "1714176000000";
+    const signature = signWebhookPayload("top-secret", payload, timestamp);
+    const result = await verifyRawFn(payload, signature, "top-secret", timestamp, {
+      nowMs: Number(timestamp),
+      maxBodyBytes: 100_000,
+    });
+    expect(result).toBe(true);
+  });
 });
 
 function streamFromString(s: string): ReadableStream<Uint8Array> {
