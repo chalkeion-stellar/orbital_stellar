@@ -24,19 +24,18 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
-
+    "test": "vitest run"
+  },
+  "bin": {
+    "orbital": "./bin/orbital"
   },
   "dependencies": {
     "@orbital-stellar/pulse-core": "workspace:*"
   },
   "devDependencies": {
-
-    "@types/node": "^25.5.0",
-    "tsx": "^4.0.0",
-    "vitest": "^4.1.2"
-
+    "@types/node": "^26.0.1",
+    "tsx": "^4.22.4",
+    "vite": "^8.1.1",
+    "vitest": "^4.1.9"
   }
 }

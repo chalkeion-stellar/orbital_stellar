@@ -66,6 +66,156 @@ app.post(
 );
 ```
 
+## Receiver-side idempotency
+
+Orbital's sender stamps every delivery with a stable `x-orbital-delivery-id` header and resends the same ID on every retry. Use `dedupReceiver` to wrap your handler so duplicate deliveries are silently dropped.
+
+```ts
+import { verifyWebhook, dedupReceiver, MemoryDedupStore } from "@orbital-stellar/pulse-webhooks";
+import express from "express";
+
+const store = new MemoryDedupStore();
+
+const handlePayment = dedupReceiver(
+  async (event) => {
+    // Called at most once per unique event.raw.id
+    console.log("New payment:", event.amount, event.asset);
+  },
+  store,
+);
+
+const app = express();
+
+app.post(
+  "/hooks/stellar",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const signature = req.header("x-orbital-signature");
+    const timestamp = req.header("x-orbital-timestamp");
+    if (!signature || !timestamp) return res.sendStatus(400);
+
+    const event = verifyWebhook(req.body, signature, process.env.WEBHOOK_SECRET!, timestamp);
+    if (!event) return res.sendStatus(401);
+
+    await handlePayment(event);
+    res.sendStatus(200);
+  },
+);
+```
+
+`MemoryDedupStore` is suitable for single-process servers. For multi-instance deployments, plug in Redis or Postgres.
+
+### Using the `x-orbital-delivery-id` header as the dedup key
+
+By default `dedupReceiver` extracts `event.raw.id`. If you prefer the transport-level delivery ID (which is stable across retries and unique per event+URL pair), pass a custom `idExtractor` that closes over the request:
+
+```ts
+app.post("/hooks/stellar", express.raw({ type: "application/json" }), async (req, res) => {
+  const signature = req.header("x-orbital-signature");
+  const timestamp = req.header("x-orbital-timestamp");
+  if (!signature || !timestamp) return res.sendStatus(400);
+
+  const event = verifyWebhook(req.body, signature, process.env.WEBHOOK_SECRET!, timestamp);
+  if (!event) return res.sendStatus(401);
+
+  const deliveryId = req.header("x-orbital-delivery-id");
+  if (!deliveryId) return res.sendStatus(400);
+
+  const handler = dedupReceiver(processEvent, store, {
+    idExtractor: () => deliveryId,
+  });
+  await handler(event);
+  res.sendStatus(200);
+});
+```
+
+### Redis store
+
+```ts
+import type { DedupStore } from "@orbital-stellar/pulse-webhooks";
+import { createClient } from "redis";
+
+const redis = createClient({ url: process.env.REDIS_URL });
+await redis.connect();
+
+const TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
+
+const redisStore: DedupStore = {
+  seen: async (id) => (await redis.exists(`dedup:${id}`)) > 0,
+  mark: async (id) => {
+    await redis.set(`dedup:${id}`, "1", { EX: TTL_SECONDS, NX: true });
+  },
+};
+
+const handlePayment = dedupReceiver(processEvent, redisStore);
+```
+
+Use `NX` (set-if-not-exists) to make `mark` atomic — concurrent deliveries of the same event cannot both pass the `seen` check when they race to set the key.
+
+### Postgres store
+
+Create the table once:
+
+```sql
+CREATE TABLE dedup_ids (
+  id TEXT PRIMARY KEY,
+  seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Optional: purge old entries with pg_cron or a scheduled job
+-- DELETE FROM dedup_ids WHERE seen_at < NOW() - INTERVAL '7 days';
+```
+
+Then wire in the store:
+
+```ts
+import type { DedupStore } from "@orbital-stellar/pulse-webhooks";
+import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const pgStore: DedupStore = {
+  seen: async (id) => {
+    const { rowCount } = await pool.query(
+      "SELECT 1 FROM dedup_ids WHERE id = $1",
+      [id],
+    );
+    return (rowCount ?? 0) > 0;
+  },
+  mark: async (id) => {
+    await pool.query(
+      "INSERT INTO dedup_ids (id) VALUES ($1) ON CONFLICT DO NOTHING",
+      [id],
+    );
+  },
+};
+
+const handlePayment = dedupReceiver(processEvent, pgStore);
+```
+
+`ON CONFLICT DO NOTHING` keeps `mark` idempotent under concurrent requests without needing application-level locking.
+
+### `DedupStore` interface
+
+```ts
+interface DedupStore {
+  seen(id: string): Promise<boolean>;
+  mark(id: string): Promise<void>;
+}
+```
+
+Implement this two-method interface to adapt any storage backend.
+
+### `dedupReceiver(handler, store, options?)` → wrapped handler
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `handler` | `(event: NormalizedEvent) => Promise<void>` | Your business-logic function |
+| `store` | `DedupStore` | Backend that tracks seen IDs |
+| `options.idExtractor` | `(event: NormalizedEvent) => string` | Override the default `event.raw.id` extractor |
+
+The wrapped handler calls `store.mark` before invoking `handler`, so even if `handler` throws the delivery is still counted as seen and will not be retried through your logic.
+
 ## Verifying in Cloudflare Workers
 
 Cloudflare Workers don't have Node.js crypto — they use Web Crypto API. Use `verifyWebhookEdge` for edge runtime compatibility:
@@ -188,9 +338,53 @@ watcher.on("webhook.dropped", (event) => {
   - `x-orbital-signature`: hex-encoded HMAC-SHA256 of `x-orbital-timestamp + "." + raw body`
   - `x-orbital-timestamp`: Unix epoch milliseconds as a string (for example: `1714176000000`)
   - `x-orbital-attempt`: `1`, `2`, … up to `retries`
+  - `x-orbital-delivery-id`: UUID v4, unique per event-URL pair and stable across retries. Use this for receiver-side idempotency (deduplication). See [Idempotency / deduplication](#idempotency--deduplication).
 - **Success:** Any 2xx response
 - **Retry:** Any non-2xx, network error, or timeout. Backoff is exponential: `2^(attempt-1) × 1000 ms`.
 - **Failure:** After `retries` unsuccessful attempts for a given URL, the watcher emits `webhook.failed` with the original event in `raw.originalEvent` and the failed target in `raw.url`.
+
+## Idempotency / deduplication
+
+Retries of the same delivery carry the same `x-orbital-delivery-id`, allowing receivers to safely deduplicate. The UUID v4 is computed once per (event, URL) pair and reused on every subsequent attempt. A new event — even with the same payload — gets a new ID.
+
+### Receiver-side dedup (built-in)
+
+The `dedupReceiver` helper wraps your handler to skip duplicate deliveries:
+
+```ts
+import { dedupReceiver, MemoryDedupStore } from "@orbital-stellar/pulse-webhooks";
+import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
+
+const seen = new MemoryDedupStore();
+
+const handler = dedupReceiver(
+  async (event: NormalizedEvent) => {
+    // Process exactly once per delivery ID
+    await processEvent(event);
+  },
+  seen,
+  {
+    // Extract delivery ID from the x-orbital-delivery-id header.
+    // The default extractor uses event.raw.id — override to use
+    // the delivery ID header instead:
+    idExtractor: (event) =>
+      (event.raw as Record<string, string>)["x-orbital-delivery-id"],
+  },
+);
+
+watcher.on("*", handler);
+```
+
+`MemoryDedupStore` is ephemeral (in-memory). For durable dedup across restarts, implement `DedupStore` with a persistent backend (Redis, Postgres, etc.):
+
+```ts
+export interface DedupStore {
+  seen(id: string): Promise<boolean>;
+  mark(id: string): Promise<void>;
+}
+```
+
+**Note:** Keep the dedup window bounded — use TTL-based stores (e.g., Redis `SET` with `EX`) to expire old IDs after the replay-window duration (default 5 minutes).
 
 ## Dead Letter Queue (DLQ)
 
@@ -304,6 +498,7 @@ Orbital provides a hardened delivery pipeline for high-stakes financial events. 
 | :--- | :--- | :--- |
 | **Authenticity** | HMAC-SHA256 signature (`x-orbital-signature`) | Payload tampering |
 | **Integrity** | `timestamp . payload` signing bubble | Replay attacks (when window-checked) |
+| **Idempotency** | `x-orbital-delivery-id` (UUID v4) per event-URL pair | Duplicate processing on retry |
 | **Side-channel defense** | `crypto.timingSafeEqual` comparison | Timing attacks on signatures |
 | **SSRF Protection** | RFC 1918 & loopback block-list | Internal network exfiltration |
 | **DNS Rebinding defense** | Pre-delivery IP validation | Validation-time vs Request-time IP swaps |
