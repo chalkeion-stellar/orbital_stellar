@@ -1,5 +1,9 @@
 import type { ContractSubscriptionFilter, Logger } from "./index.js";
-import { SorobanRpcError, type SorobanRpcErrorCode } from "./errors.js";
+import {
+  SorobanRpcError,
+  type SorobanRpcErrorCode,
+  type SorobanRpcErrorOptions,
+} from "./errors.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -138,6 +142,14 @@ function classifyJsonRpcCode(code: number): {
   return { code: "invalid_request", retryable: false };
 }
 
+function parseRetryAfterHeader(header: string | null): number | null {
+  if (!header) return null;
+  const seconds = Number.parseInt(header, 10);
+  if (!Number.isNaN(seconds)) return seconds * 1000;
+  const date = new Date(header).getTime();
+  return Number.isNaN(date) ? null : Math.max(date - Date.now(), 0);
+}
+
 function isAbortError(err: unknown): boolean {
   if (err instanceof Error) {
     if ((err as { name?: string }).name === "AbortError") return true;
@@ -199,8 +211,13 @@ export class SorobanRpcClient {
     return SorobanRpcClient.cachedNetwork;
   }
 
-  static async fetchAndCacheNetwork(_url: string): Promise<SorobanNetworkInfo> {
-    throw new Error("fetchAndCacheNetwork not implemented");
+  static async fetchAndCacheNetwork(
+    url: string,
+    headers?: Record<string, string>,
+    fetchImpl?: typeof fetch,
+  ): Promise<SorobanNetworkInfo> {
+    const client = new SorobanRpcClient({ url, headers, fetch: fetchImpl });
+    return await client.getNetwork();
   }
 
   private readonly url: string;
@@ -303,9 +320,14 @@ export class SorobanRpcClient {
 
     if (!response.ok) {
       const { code, retryable } = classifyHttpStatus(response.status);
+      const opts: SorobanRpcErrorOptions = { code, retryable, status: response.status };
+      if (response.status === 429) {
+        const retryAfterMs = parseRetryAfterHeader(response.headers.get("Retry-After"));
+        if (retryAfterMs !== null) opts.retryAfterMs = retryAfterMs;
+      }
       throw new SorobanRpcError(
         `Soroban RPC request failed: ${response.status} ${response.statusText}`,
-        { code, retryable, status: response.status },
+        opts,
       );
     }
 
