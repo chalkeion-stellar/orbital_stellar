@@ -15,6 +15,7 @@ import type { BackoffStrategy } from "./backoff.js";
 import type { RetryQueue, RetryRecord } from "./RetryQueue.js";
 import type { Tracer, UrlEntry, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+import { NOOP_WEBHOOK_METRICS } from "./metrics.js";
 
 const BLOCKED_WEBHOOK_ADDRESSES = new BlockList();
 BLOCKED_WEBHOOK_ADDRESSES.addSubnet("10.0.0.0", 8, "ipv4");
@@ -196,6 +197,7 @@ export class WebhookDelivery {
     };
     this.config.maxConcurrentRetries = Math.max(1, this.config.maxConcurrentRetries);
     this.config.maxConcurrentDeliveries = Math.max(1, this.config.maxConcurrentDeliveries);
+    this.config.metrics = this.config.metrics ?? NOOP_WEBHOOK_METRICS;
     this.retryQueue = config.retryQueue;
 
     this.watcher.addStopHandler(() => {
@@ -232,7 +234,6 @@ export class WebhookDelivery {
 
     const builtInValidationError = this.validateUrl(url);
     if (builtInValidationError) {
-      this.emitFailure(event, url, builtInValidationError, attempt);
       return { ok: false, error: builtInValidationError, terminal: true };
     }
 
@@ -254,8 +255,8 @@ export class WebhookDelivery {
     if (this.watcher.stopped) return { ok: false, error: "stopped", terminal: true };
 
     if (resolvedHostnameError) {
-      this.emitFailure(event, url, resolvedHostnameError, attempt);
-      return { ok: false, error: resolvedHostnameError, terminal: true };
+      const isTerminal = resolvedHostnameError === BLOCKED_ADDRESS_ERROR;
+      return { ok: false, error: resolvedHostnameError, terminal: isTerminal };
     }
 
     const payload = JSON.stringify(event);

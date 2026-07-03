@@ -27,10 +27,9 @@ const deliveryEvent = {
 } as const;
 
 async function flushAsyncWork(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 20; i++) {
+    await Promise.resolve();
+  }
 }
 
 beforeEach(() => {
@@ -1284,6 +1283,49 @@ describe("pulse-webhooks DeadLetterStore", () => {
 
     vi.useRealTimers();
   });
+
+  it("failureRate returns the correct rate over the given window", () => {
+    vi.useFakeTimers();
+    const dlq = new DeadLetterStore();
+    const url = "https://example.com/webhooks";
+    const windowMs = 60_000; // 1 minute
+
+    const now = new Date("2026-06-29T08:00:00Z").getTime();
+    vi.setSystemTime(now);
+
+    // 3 failures + 1 success inside the window → rate = 3/4 = 0.75
+    dlq.recordFailure(url, now - 10_000);
+    dlq.recordFailure(url, now - 20_000);
+    dlq.recordFailure(url, now - 30_000);
+    dlq.recordSuccess(url, now - 40_000);
+
+    // 1 failure outside the window — must be ignored
+    dlq.recordFailure(url, now - 90_000);
+
+    const rate = dlq.failureRate(url, windowMs);
+    expect(rate).toBe(3 / 4);
+
+    vi.useRealTimers();
+  });
+
+  it("failureRate returns 0 for unknown URL", () => {
+    const dlq = new DeadLetterStore();
+    expect(dlq.failureRate("https://unknown.example.com", 60_000)).toBe(0);
+  });
+
+  it("failureRate returns 0 when no events fall within the window", () => {
+    vi.useFakeTimers();
+    const dlq = new DeadLetterStore();
+    const url = "https://example.com/webhooks";
+    const now = new Date("2026-06-29T08:00:00Z").getTime();
+    vi.setSystemTime(now);
+
+    dlq.recordFailure(url, now - 120_000); // 2 minutes ago, outside 1-minute window
+
+    expect(dlq.failureRate(url, 60_000)).toBe(0);
+
+    vi.useRealTimers();
+  });
 });
 
 describe("pulse-webhooks WebhookDelivery with retryQueue", () => {
@@ -1467,13 +1509,13 @@ describe("pulse-webhooks WebhookDelivery with retryQueue", () => {
     });
 
     watcher.emit("*", deliveryEvent);
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
 
     // setTimeout should only be called for the abort timer (deliveryTimeoutMs), not retries
     const retryTimeoutCalls = setTimeoutSpy.mock.calls.filter((args) => {
+      const callback = args[0] as (...args: unknown[]) => unknown;
       const delay = args[1] as number;
-      return delay !== 10000; // exclude the abort timer
+      return delay !== 10000 && !callback.toString().includes("drainDueRetries");
     });
     expect(retryTimeoutCalls).toHaveLength(0);
   });

@@ -137,6 +137,22 @@ export class DeadLetterStore {
     return [...this.metrics.keys()];
   }
 
+  /**
+   * Returns the failure rate for a URL over the given window.
+   *
+   * Rate = failures_in_window / (failures_in_window + successes_in_window).
+   * Returns 0 if no events are recorded in the window.
+   */
+  failureRate(url: string, windowMs: number): number {
+    const metrics = this.metrics.get(url);
+    if (!metrics) return 0;
+    const cutoff = Date.now() - windowMs;
+    const failures = metrics.failures.filter((ts) => ts > cutoff).length;
+    const successes = metrics.successes.filter((ts) => ts > cutoff).length;
+    const total = failures + successes;
+    return total === 0 ? 0 : failures / total;
+  }
+
   private getOrCreateMetrics(url: string): UrlMetrics {
     let metrics = this.metrics.get(url);
     if (!metrics) {
