@@ -109,7 +109,7 @@ describe("SorobanRpcClient xdrFormat options & Normalization", () => {
     it("preserves raw base64 value and leaves decodedData undefined when xdrFormat is base64", () => {
       const result = normalizeContractEvent(mockRawEvent, "base64");
       expect(result).not.toBeNull();
-      expect(result!.type).toBe("contract_emitted");
+      expect(result!.type).toBe("contract.emitted");
 
       const emitted = result as any;
       expect(emitted.value).toBe("AAAAEAAAAA5VbW91bnQAAAAAAA==");
@@ -123,7 +123,7 @@ describe("SorobanRpcClient xdrFormat options & Normalization", () => {
       };
       const result = normalizeContractEvent(mockJsonValRawEvent, "json");
       expect(result).not.toBeNull();
-      expect(result!.type).toBe("contract_emitted");
+      expect(result!.type).toBe("contract.emitted");
 
       const emitted = result as any;
       expect(emitted.value).toBe("");
@@ -137,7 +137,7 @@ describe("SorobanRpcClient xdrFormat options & Normalization", () => {
       };
       const result = normalizeContractEvent(mockJsonValRawEvent);
       expect(result).not.toBeNull();
-      expect(result!.type).toBe("contract_emitted");
+      expect(result!.type).toBe("contract.emitted");
 
       const emitted = result as any;
       expect(emitted.value).toBe("");
