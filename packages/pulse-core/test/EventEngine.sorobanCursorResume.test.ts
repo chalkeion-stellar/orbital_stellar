@@ -174,7 +174,9 @@ describe("EventEngine Soroban cursor resume", () => {
       },
     });
 
-    const watcher = engine.subscribeContract("CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4");
+    const watcher = engine.subscribeContract(
+      "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
+    );
     watcher.on("contract.emitted", (event) => {
       events.push(event);
     });
