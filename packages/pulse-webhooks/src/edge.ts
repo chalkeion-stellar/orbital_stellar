@@ -1,7 +1,7 @@
 import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
 
 import type { VerifyWebhookOptions } from "./types.js";
-import { DEFAULT_CLOCK_SKEW_MS } from "./types.js";
+import { DEFAULT_CLOCK_SKEW_MS, DEFAULT_MAX_AGE_MS } from "./types.js";
 
 /**
  * Verifies webhook signatures using Web Crypto API (compatible with Cloudflare Workers, Deno, and browsers)
@@ -10,7 +10,8 @@ import { DEFAULT_CLOCK_SKEW_MS } from "./types.js";
  * @param signature - The x-orbital-signature header value
  * @param secret - Your webhook secret
  * @param timestamp - The x-orbital-timestamp header value
- * @param options - Optional replay-window options (`maxAgeMs`, `clockSkewMs`, `nowMs`)
+ * @param options - Optional replay-window options (`maxAgeMs`, `clockSkewMs`, `nowMs`, `maxBodyBytes`)
+ * @param options.maxBodyBytes - Maximum allowed payload size in bytes. Defaults to 100_000 (~100 KB).
  * @returns Parsed NormalizedEvent if verification succeeds, null otherwise
  */
 export async function verifyWebhookEdge(
@@ -20,6 +21,11 @@ export async function verifyWebhookEdge(
   timestamp: string,
   options: VerifyWebhookOptions = {},
 ): Promise<NormalizedEvent | null> {
+  // Enforce maximum body size before any cryptographic work.
+  const maxBodyBytes = options.maxBodyBytes ?? 100_000;
+  // Measure payload size in bytes.
+  const payloadBytes = new TextEncoder().encode(payload).length;
+  if (payloadBytes > maxBodyBytes) return null;
   if (!(await verifyWebhookEdgeRaw(payload, signature, secret, timestamp, options))) {
     return null;
   }
@@ -46,7 +52,8 @@ export async function verifyWebhookEdge(
  * @param signature - The x-orbital-signature header value
  * @param secret - Your webhook secret
  * @param timestamp - The x-orbital-timestamp header value
- * @param options - Optional replay-window options
+ * @param options - Optional replay-window options (`maxAgeMs`, `clockSkewMs`, `nowMs`, `maxBodyBytes`)
+ * @param options.maxBodyBytes - Maximum allowed payload size in bytes. Defaults to 100_000 (~100 KB).
  * @returns Promise<true> if signature is valid, Promise<false> otherwise
  */
 export async function verifyWebhookEdgeRaw(
@@ -56,6 +63,10 @@ export async function verifyWebhookEdgeRaw(
   timestamp: string,
   options: VerifyWebhookOptions = {},
 ): Promise<boolean> {
+  const maxBodyBytes = options.maxBodyBytes ?? 100_000;
+  const payloadBytes = new TextEncoder().encode(payload).length;
+  if (payloadBytes > maxBodyBytes) return false;
+
   if (!/^\d+$/.test(timestamp)) return false;
 
   const timestampMs = Number(timestamp);
@@ -67,11 +78,9 @@ export async function verifyWebhookEdgeRaw(
   // Reject timestamps from the future (beyond clock skew allowance).
   if (timestampMs > nowMs + clockSkewMs) return false;
 
-  // Only enforce the replay window when maxAgeMs is explicitly configured.
-  // Omitting it preserves pre-existing behaviour (no age rejection).
-  if (options.maxAgeMs !== undefined) {
-    if (timestampMs < nowMs - options.maxAgeMs - clockSkewMs) return false;
-  }
+  // Enforce replay window: reject timestamps older than maxAgeMs (default 5 min) plus allowed clock skew.
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return false;
 
   try {
     const keyData = new TextEncoder().encode(secret);
@@ -100,5 +109,120 @@ export async function verifyWebhookEdgeRaw(
     return result === 0;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Verifies a webhook whose body arrives as a ReadableStream using Web Crypto API.
+ * The stream is consumed exactly once, so the caller never needs to buffer the
+ * body separately before calling this function.
+ *
+ * **Trade-off:** The full body is still buffered internally (the Web Crypto API
+ * does not support incremental HMAC). This is purely a consumer-facing convenience
+ * that avoids forcing callers to buffer the stream themselves.
+ *
+ * @param stream - The raw request body as a ReadableStream<Uint8Array>
+ * @param signature - The x-orbital-signature header value
+ * @param secret - Your webhook secret
+ * @param timestamp - The x-orbital-timestamp header value
+ * @param options - Optional replay-window options (`maxAgeMs`, `clockSkewMs`, `nowMs`, `maxBodyBytes`)
+ * @param options.maxBodyBytes - Maximum allowed payload size in bytes. Defaults to 100_000 (~100 KB).
+ * @returns `{ event, body }` where `event` is the parsed NormalizedEvent and `body`
+ *          is the buffered UTF-8 string, or `null` if verification fails
+ */
+export async function verifyWebhookEdgeStream(
+  stream: ReadableStream<Uint8Array>,
+  signature: string,
+  secret: string,
+  timestamp: string,
+  options: VerifyWebhookOptions = {},
+): Promise<{ event: NormalizedEvent; body: string } | null> {
+  if (!/^\d+$/.test(timestamp)) return null;
+
+  const timestampMs = Number(timestamp);
+  if (!Number.isFinite(timestampMs)) return null;
+
+  const clockSkewMs = options.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
+  const nowMs = options.nowMs ?? Date.now();
+
+  if (timestampMs > nowMs + clockSkewMs) return null;
+
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+  if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return null;
+
+  // Enforce maximum body size by reading the stream into a single buffer.
+  // The full body is still buffered internally (see doc trade-off below).
+  const maxBodyBytes = options.maxBodyBytes ?? 100_000;
+
+  try {
+    const keyData = new TextEncoder().encode(secret);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      keyData,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+
+    // Consume the stream incrementally, buffering all chunks.
+    const chunks: Uint8Array[] = [];
+    let totalLength = 0;
+    const reader = stream.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          totalLength += value.length;
+          if (totalLength > maxBodyBytes) return null;
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Concatenate into a single buffer.
+    const bodyBytes = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bodyBytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    const body = new TextDecoder().decode(bodyBytes);
+
+    // Build the signed payload: "<timestamp>.<body>".
+    const signedPayload = `${timestamp}.${body}`;
+    const expectedBuffer = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(signedPayload),
+    );
+
+    const signatureBytes = new Uint8Array(
+      signature.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || [],
+    );
+    const expectedBytes = new Uint8Array(expectedBuffer);
+    if (expectedBytes.length !== signatureBytes.length) return null;
+
+    let result = 0;
+    for (let i = 0; i < expectedBytes.length; i++) {
+      result |= (expectedBytes[i] || 0) ^ (signatureBytes[i] || 0);
+    }
+    if (result !== 0) return null;
+
+    const evt = JSON.parse(body) as NormalizedEvent;
+    if (options.schema) {
+      try {
+        if (!options.schema(evt)) return null;
+      } catch {
+        return null;
+      }
+    }
+
+    return { event: evt, body };
+  } catch {
+    return null;
   }
 }
