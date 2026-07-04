@@ -249,7 +249,10 @@ export class EventEngine {
       ...config.reconnect,
     };
     this.log = config.logger ?? noop;
-    this.streamKey = config.streamKey ?? "pulse-core-cursor";
+    // Use a source-scoped default key so Horizon and Soroban cursors are
+    // persisted independently. Allow `streamKey` to override the Horizon key
+    // for backward compatibility / testing.
+    this.streamKey = config.streamKey ?? `horizon:${config.network}`;
     this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
     this.abiRegistry = config.abiRegistry;
     this.cursorStore = config.cursorStore;
@@ -267,7 +270,9 @@ export class EventEngine {
         });
         return undefined;
       });
-      const sorobanCursorKey = `${this.streamKey}:soroban`;
+      const sorobanCursorKey = config.streamKey
+        ? `${config.streamKey}:soroban`
+        : `soroban:${config.network}`;
       let inMemoryCursor: string | undefined;
       const cursorStore = {
         getCursor: async (): Promise<string | undefined> => {
@@ -285,7 +290,7 @@ export class EventEngine {
             this.consecutiveCursorFailures = 0;
             this.isCursorStoreUnhealthy = false;
           } catch (err) {
-            this.handleCursorFailure(err);
+            this.handleCursorFailure(err, sorobanCursorKey);
           }
         },
       };
@@ -1129,10 +1134,11 @@ export class EventEngine {
     }
   }
 
-  private handleCursorFailure(err: unknown): void {
+  private handleCursorFailure(err: unknown, key?: string): void {
     this.consecutiveCursorFailures++;
+    const usedKey = key ?? this.streamKey;
     this.log.warn("[pulse-core] cursorStore.set() failed.", {
-      key: this.streamKey,
+      key: usedKey,
       consecutiveFailures: this.consecutiveCursorFailures,
       error: err instanceof Error ? err.message : String(err),
     });
