@@ -5,7 +5,7 @@ const dnsLookupMock = vi.hoisted(() => vi.fn());
 vi.mock("dns/promises", () => ({ lookup: dnsLookupMock }));
 
 import { Watcher } from "@orbital-stellar/pulse-core";
-import type { RetryQueue, UrlEntry, WebhookMetrics } from "../src/index.js";
+import type { BackoffStrategy, RetryQueue, UrlEntry, WebhookMetrics } from "../src/index.js";
 import {
   cappedExponential,
   constant,
