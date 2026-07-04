@@ -17,9 +17,7 @@ import type {
   BumpSequenceEvent,
   ClaimableClaimedEvent,
   ClaimableCreatedEvent,
-  ContractEmittedEvent,
   ContractFilter,
-  ContractInvokedEvent,
   ContractSubscribeOptions,
   ContractSubscriptionConfig,
   ContractSubscriptionFilter,
@@ -66,7 +64,12 @@ import type {
   RawHorizonSetTrustLineFlags,
   RawSorobanEvent,
 } from "./index.js";
-import { UnknownNetworkError, NETWORK_PASSPHRASES } from "./index.js";
+import {
+  UnknownNetworkError,
+  NETWORK_PASSPHRASES,
+  ContractEmittedEvent,
+  ContractInvokedEvent,
+} from "./index.js";
 import { normalizeClaimPredicate } from "./claimPredicate.js";
 
 type PendingPaymentEvent = Omit<PaymentEvent, "type"> & { type: "unknown" };
@@ -155,6 +158,12 @@ export class EventEngine {
     string,
     { watcher: Watcher; filters: ContractSubscriptionFilter[] }
   > = new Map();
+  /**
+   * Registry for config-object-based contract subscriptions.
+   * Keyed by {@link stableFilterKey} — the same canonical key used by
+   * `subscribeContract(config)` for deduplication and by
+   * `unsubscribeContract(config)` for lookup.
+   */
   private contractConfigRegistry: Map<string, Watcher> = new Map();
   private subscriptionNames: Map<string, string> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
@@ -759,8 +768,13 @@ export class EventEngine {
   /**
    * Stops the SSE stream and all active watchers.
    * Cleans up all resources and resets reconnection state.
+   *
+   * Resolves only once the Soroban subscriber's graceful shutdown completes —
+   * i.e. after any in-flight `getEvents` poll has been aborted and settled — so
+   * that no further Soroban events are emitted once the returned promise
+   * resolves (#636).
    */
-  stop(): void {
+  async stop(): Promise<void> {
     this.stopGeneration++;
     this.clearReconnectTimer();
     this.pendingReconnectSuccessAttempt = null;
@@ -772,7 +786,7 @@ export class EventEngine {
     this.pausedSources.clear();
 
     if (this.sorobanSubscriber) {
-      this.sorobanSubscriber.stop();
+      await this.sorobanSubscriber.stop();
     }
 
     this.notifyWatchers("engine.stopped", {
@@ -2139,7 +2153,7 @@ export function normalizeContractEvent(
   rawRpcEvent: any,
   xdrFormatOrLogger?: "base64" | "json" | Logger,
   loggerOption?: Logger,
-): RpcContractInvokedEvent | RpcContractEmittedEvent | null {
+): ContractInvokedEvent | ContractEmittedEvent | null {
   let xdrFormat: "base64" | "json" = "base64";
   let logger = loggerOption;
 
@@ -2150,16 +2164,16 @@ export function normalizeContractEvent(
       logger = xdrFormatOrLogger as Logger;
     }
   }
-  // 1. Structural check patterns
+
+  // Basic structural validation
   if (!rawRpcEvent || typeof rawRpcEvent !== "object") {
-    logger?.warn("[pulse-core] Dropping malformed Soroban event: payload is not a valid object.", {
+    logger?.warn(`[pulse-core] Dropping malformed Soroban event: payload is not a valid object.`, {
       event: rawRpcEvent,
     });
     return null;
   }
 
   const e = rawRpcEvent as Record<string, unknown>;
-
   const requiredFields = [
     "id",
     "pagingToken",
@@ -2188,29 +2202,37 @@ export function normalizeContractEvent(
     inSuccessfulContractCall,
     topic,
     value,
+    function: fn,
+    args,
   } = e;
 
+  // Contract invocation events (system or diagnostic categories)
   if (type === "system" || type === "diagnostic") {
-    if (typeof rawRpcEvent.function !== "string") {
+    if (typeof fn !== "string") {
       logger?.warn(
         "[pulse-core] Dropping malformed contract invoked event: missing function field.",
         { event: rawRpcEvent },
       );
       return null;
     }
-    return {
-      type: "contract_invoked",
+    const invoked = withTimestampDate({
+      type: "contract.invoked",
+      contractId: String(contractId),
+      function: String(fn),
+      args: Array.isArray(args) ? (args as unknown[]) : [],
+      ledger: Number(ledger),
+      txHash: String(txHash),
+      timestamp: String(ledgerClosedAt),
+      raw: rawRpcEvent,
+      decodedData: rawRpcEvent.decodedData,
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
       id: String(e.id),
       pagingToken: String(e.pagingToken),
-      contractId: String(contractId),
-      txHash: String(txHash),
-      ledger: Number(ledger),
-      ledgerClosedAt: String(ledgerClosedAt),
-      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
-      raw: rawRpcEvent,
-    };
+    }) as unknown as ContractInvokedEvent;
+    return invoked;
   }
 
+  // Contract emitted events (the usual "contract" category)
   if (type === "contract") {
     if (!Array.isArray(topic) || value === undefined || value === null) {
       logger?.warn(
@@ -2223,25 +2245,32 @@ export function normalizeContractEvent(
     const isJson =
       xdrFormat === "json" || typeof value === "object" || rawRpcEvent.decodedData !== undefined;
 
-    const norm: any = {
-      type: "contract_emitted",
+    const emitted = withTimestampDate({
+      type: "contract.emitted",
+      contractId: String(contractId),
+      topics: (topic as unknown[]).map((t) => String(t)),
+      // Preserve original field name for backward compatibility
+      value: isJson ? "" : String(value),
+      data: isJson
+        ? rawRpcEvent.decodedData !== undefined
+          ? rawRpcEvent.decodedData
+          : value
+        : String(value),
+      raw: rawRpcEvent,
+      decodedData: isJson
+        ? rawRpcEvent.decodedData !== undefined
+          ? rawRpcEvent.decodedData
+          : value
+        : undefined,
+      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      eventId: String(e.id),
+      ledger: Number(ledger),
+      txHash: String(txHash),
+      timestamp: String(ledgerClosedAt),
       id: String(e.id),
       pagingToken: String(e.pagingToken),
-      contractId: String(contractId),
-      txHash: String(txHash),
-      ledger: Number(ledger),
-      ledgerClosedAt: String(ledgerClosedAt),
-      topics: (topic as unknown[]).map((t) => String(t)),
-      value: isJson ? "" : String(value),
-      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
-      raw: rawRpcEvent,
-    };
-
-    if (isJson) {
-      norm.decodedData = rawRpcEvent.decodedData !== undefined ? rawRpcEvent.decodedData : value;
-    }
-
-    return norm;
+    }) as unknown as ContractEmittedEvent;
+    return emitted;
   }
 
   logger?.warn(
