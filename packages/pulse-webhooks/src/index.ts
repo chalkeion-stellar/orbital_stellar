@@ -47,6 +47,7 @@ export { MemoryDeadLetterStore };
 /** @deprecated Use {@link MemoryDeadLetterStore} instead. */
 export const DeadLetterStore = MemoryDeadLetterStore;
 export { NOOP_WEBHOOK_METRICS, CountingWebhookMetrics } from "./metrics.js";
+export { PrometheusWebhookMetrics } from "./PrometheusWebhookMetrics.js";
 export type { WebhookAttemptStatus, WebhookMetrics, WebhookTerminalOutcome } from "./types.js";
 export { exponentialJittered, linear, cappedExponential, constant } from "./backoff.js";
 export type { BackoffStrategy } from "./backoff.js";

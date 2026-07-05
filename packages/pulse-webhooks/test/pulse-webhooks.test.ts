@@ -13,6 +13,7 @@ import {
   exponentialJittered,
   linear,
   MemoryRetryQueue,
+  PrometheusWebhookMetrics,
   verifyWebhook,
   verifyWebhookRaw,
   verifyWebhookEdge,
@@ -143,6 +144,57 @@ describe("pulse-webhooks WebhookDelivery", () => {
     expect(metrics.recordTerminal).toHaveBeenCalledWith(
       "https://prod.example.com/webhooks/stellar",
       "success",
+    );
+  });
+
+  it("registers Prometheus metrics and exposes documented metric names", async () => {
+    const metrics = new PrometheusWebhookMetrics();
+    const registry = metrics.register();
+
+    metrics.recordAttempt("https://prod.example.com/webhooks/stellar", 1, 100, "success");
+    metrics.recordTerminal("https://prod.example.com/webhooks/stellar", "success");
+
+    const metricList = await registry.getMetricsAsJSON();
+
+    expect(metricList).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "orbital_webhook_attempts_total",
+          type: "counter",
+        }),
+        expect.objectContaining({
+          name: "orbital_webhook_duration_seconds",
+          type: "histogram",
+        }),
+        expect.objectContaining({
+          name: "orbital_webhook_terminal_outcomes_total",
+          type: "counter",
+        }),
+      ]),
+    );
+
+    const attemptsMetric = metricList.find(
+      (metric) => metric.name === "orbital_webhook_attempts_total",
+    );
+    const terminalMetric = metricList.find(
+      (metric) => metric.name === "orbital_webhook_terminal_outcomes_total",
+    );
+
+    expect(attemptsMetric).toBeDefined();
+    expect(attemptsMetric?.values).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          labels: { url: "https://prod.example.com/webhooks/stellar", status: "success" },
+        }),
+      ]),
+    );
+    expect(terminalMetric).toBeDefined();
+    expect(terminalMetric?.values).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          labels: { url: "https://prod.example.com/webhooks/stellar", outcome: "success" },
+        }),
+      ]),
     );
   });
 

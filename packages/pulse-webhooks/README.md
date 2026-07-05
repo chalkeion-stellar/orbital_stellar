@@ -300,6 +300,38 @@ Edge-compatible version of `verifyWebhook` using Web Crypto API. Works in Cloudf
 
 Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification. Accepts the same `options` as `verifyWebhook` (`maxAgeMs`, `clockSkewMs`, `nowMs`).
 
+## Prometheus metrics
+
+`@orbital-stellar/pulse-webhooks` exports `PrometheusWebhookMetrics`, a ready-to-use `WebhookMetrics` implementation backed by Prometheus.
+
+```ts
+import { PrometheusWebhookMetrics, WebhookDelivery } from "@orbital-stellar/pulse-webhooks";
+import { Watcher } from "@orbital-stellar/pulse-core";
+
+const metrics = new PrometheusWebhookMetrics();
+const watcher = new Watcher("GABC");
+
+new WebhookDelivery(watcher, {
+  url: "https://your-app.com/hooks/stellar",
+  secret: process.env.WEBHOOK_SECRET!,
+  metrics,
+});
+
+// Expose Prometheus scrape endpoint
+app.get("/metrics", async (req, res) => {
+  res.setHeader("Content-Type", metrics.register().contentType);
+  res.end(await metrics.register().metrics());
+});
+```
+
+The following metric names are exposed:
+
+- `orbital_webhook_attempts_total` — counter; labels: `url`, `status`
+- `orbital_webhook_duration_seconds` — histogram; labels: `url`, `status`
+- `orbital_webhook_terminal_outcomes_total` — counter; labels: `url`, `outcome`
+
+> Note: URLs are used as label values, which can increase cardinality. Normalize or aggregate labels as needed in production.
+
 ### Failure events
 
 When a delivery cannot be completed, the `Watcher` emits special events for routing and debugging.
