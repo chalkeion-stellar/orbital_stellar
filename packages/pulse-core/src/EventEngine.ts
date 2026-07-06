@@ -409,6 +409,7 @@ export class EventEngine {
         if (name !== undefined) {
           this.log.warn(
             `[pulse-core] subscribe() called for ${name} (${address}) which already has an active watcher — filter option ignored.`,
+            { address, hasFilter: true },
           );
         } else {
           this.log.warn(
@@ -503,6 +504,7 @@ export class EventEngine {
       if (options?.filter) {
         this.log.warn(
           `[pulse-core] subscribeContract() called for ${this.describeSubscription(id)} which already has an active watcher — filter option ignored.`,
+          { id, hasFilter: true },
         );
       }
       return existing.watcher;
@@ -749,11 +751,13 @@ export class EventEngine {
    */
   pauseSource(source: "horizon" | "soroban"): void {
     if (this.pausedSources.has(source)) {
-      this.log.warn(`[pulse-core] pauseSource("${source}") called but source is already paused.`);
+      this.log.warn(`[pulse-core] pauseSource("${source}") called but source is already paused.`, {
+        source,
+      });
       return;
     }
     this.pausedSources.add(source);
-    this.log.info(`[pulse-core] Source "${source}" paused.`);
+    this.log.info(`[pulse-core] Source "${source}" paused.`, { source });
   }
 
   /**
@@ -763,11 +767,13 @@ export class EventEngine {
    */
   resumeSource(source: "horizon" | "soroban"): void {
     if (!this.pausedSources.has(source)) {
-      this.log.warn(`[pulse-core] resumeSource("${source}") called but source is not paused.`);
+      this.log.warn(`[pulse-core] resumeSource("${source}") called but source is not paused.`, {
+        source,
+      });
       return;
     }
     this.pausedSources.delete(source);
-    this.log.info(`[pulse-core] Source "${source}" resumed.`);
+    this.log.info(`[pulse-core] Source "${source}" resumed.`, { source });
   }
 
   /**
