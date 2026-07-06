@@ -1,5 +1,6 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { Watcher } from "./Watcher.js";
+import { fullJitterBackoffMs } from "./backoff.js";
 import { EngineAlreadyStartedError, NetworkMismatchError } from "./errors.js";
 import { resolveSorobanPageLimit, SorobanSubscriber } from "./SorobanSubscriber.js";
 import { SorobanRpcClient } from "./SorobanRpcClient.js";
@@ -45,7 +46,6 @@ import type {
   WatcherNotification,
   WatcherNotificationType,
   Logger,
-  CursorStore,
   CursorStoreLike,
   DecodeFailedNotification,
   RawHorizonPayment,
@@ -986,11 +986,11 @@ export class EventEngine {
         emittedAt: new Date().toISOString(),
       });
     } else {
-      const exponentialDelay = Math.min(
-        this.reconnectConfig.initialDelayMs * 2 ** (nextAttempt - 1),
+      delayMs = fullJitterBackoffMs(
+        nextAttempt,
+        this.reconnectConfig.initialDelayMs,
         this.reconnectConfig.maxDelayMs,
       );
-      delayMs = Math.floor(Math.random() * exponentialDelay);
 
       this.log.warn("[pulse-core] SSE reconnect attempt scheduled.", {
         attempt: nextAttempt,

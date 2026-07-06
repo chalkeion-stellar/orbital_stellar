@@ -1,21 +1,5 @@
 import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
-
-type ConnectionKey = {
-  serverUrl: string;
-  address: string;
-  token?: string;
-  withCredentials?: boolean;
-};
-
-type ConnectionSubscriber = {
-  onOpen: () => void;
-  onEvent: (event: NormalizedEvent) => void;
-  onParseError: () => void;
-  onError: () => void;
-  onAuthExpired?: () => void;
-  /** Called with the SSE `id:` field value when non-empty; enables Last-Event-ID catch-up tracking. */
-  onEventId?: (id: string) => void;
-};
+import type { ConnectionKey, ConnectionSubscriber } from "./connectionTypes.js";
 
 type ConnectionEntry = {
   source: EventSource;
@@ -75,16 +59,25 @@ function notifySubscribers(
   }
 }
 
-export function acquireEventConnection(key: ConnectionKey, subscriber: ConnectionSubscriber) {
-  const poolKey = getConnectionKey(key);
+/**
+ * Shared pooling/wiring logic for both plain-address and contract-event SSE
+ * connections: acquires (or creates) the pooled `EventSource` for `poolKey`,
+ * wires up open/message/error handling and DevTools instrumentation, and
+ * registers `subscriber` against it.
+ */
+function acquireSseConnection(
+  poolKey: string,
+  buildUrl: () => string,
+  withCredentials: boolean | undefined,
+  devtoolsServerUrl: string,
+  devtoolsAddressLabel: string,
+  subscriber: ConnectionSubscriber,
+) {
   let entry = pool.get(poolKey);
 
   if (!entry) {
     const newEntry: ConnectionEntry = {
-      source: new EventSource(
-        getEventSourceUrl(key),
-        key.withCredentials ? { withCredentials: true } : undefined,
-      ),
+      source: new EventSource(buildUrl(), withCredentials ? { withCredentials: true } : undefined),
       subscribers: new Set(),
       connected: false,
     };
@@ -138,9 +131,9 @@ export function acquireEventConnection(key: ConnectionKey, subscriber: Connectio
 
     withDevtools((mod) => {
       newEntry.devId = mod.registerConnection({
-        serverUrl: key.serverUrl,
-        address: key.address,
-        url: getEventSourceUrl(key),
+        serverUrl: devtoolsServerUrl,
+        address: devtoolsAddressLabel,
+        url: buildUrl(),
         connected: newEntry.connected,
         error: null,
       });
@@ -168,6 +161,17 @@ export function acquireEventConnection(key: ConnectionKey, subscriber: Connectio
       }
     },
   };
+}
+
+export function acquireEventConnection(key: ConnectionKey, subscriber: ConnectionSubscriber) {
+  return acquireSseConnection(
+    getConnectionKey(key),
+    () => getEventSourceUrl(key),
+    key.withCredentials,
+    key.serverUrl,
+    key.address,
+    subscriber,
+  );
 }
 
 // --- Contract event connection helpers -------------------------------------------------
@@ -229,97 +233,14 @@ export function acquireContractEventConnection(
   },
   subscriber: ConnectionSubscriber,
 ) {
-  const poolKey = getContractKey(key);
-  let entry = pool.get(poolKey);
-
-  if (!entry) {
-    const newEntry: ConnectionEntry = {
-      source: new EventSource(
-        getContractEventSourceUrl(key),
-        key.withCredentials ? { withCredentials: true } : undefined,
-      ),
-      subscribers: new Set(),
-      connected: false,
-    };
-
-    newEntry.source.onopen = () => {
-      newEntry.connected = true;
-      notifySubscribers(newEntry, (cur) => cur.onOpen());
-      withDevtools((mod) => {
-        if (newEntry.devId) mod.updateConnection(newEntry.devId, { connected: true, error: null });
-      });
-    };
-
-    newEntry.source.onmessage = (message) => {
-      try {
-        const data = JSON.parse(message.data);
-        if (data && typeof data === "object" && data.type === "auth_expired") {
-          newEntry.connected = false;
-          notifySubscribers(newEntry, (cur) => cur.onAuthExpired?.());
-          withDevtools((mod) => {
-            if (newEntry.devId)
-              mod.updateConnection(newEntry.devId, { connected: false, error: "Token expired" });
-          });
-          return;
-        }
-        const event = data as NormalizedEvent;
-        const id = message.lastEventId;
-        notifySubscribers(newEntry, (cur) => {
-          if (id) cur.onEventId?.(id);
-          cur.onEvent(event);
-        });
-        withDevtools((mod) => {
-          if (newEntry.devId) mod.updateConnection(newEntry.devId, { lastEvent: Date.now() });
-        });
-      } catch {
-        notifySubscribers(newEntry, (cur) => cur.onParseError());
-      }
-    };
-
-    newEntry.source.onerror = () => {
-      newEntry.connected = false;
-      notifySubscribers(newEntry, (cur) => cur.onError());
-      withDevtools((mod) => {
-        if (newEntry.devId) {
-          mod.updateConnection(newEntry.devId, {
-            connected: false,
-            error: "Connection lost — retrying...",
-          });
-        }
-      });
-    };
-
-    withDevtools((mod) => {
-      newEntry.devId = mod.registerConnection({
-        serverUrl: key.serverUrl,
-        address: key.contractId, // reuse address field for devtools display
-        url: getContractEventSourceUrl(key),
-        connected: newEntry.connected,
-        error: null,
-      });
-    });
-
-    pool.set(poolKey, newEntry);
-    entry = newEntry;
-  }
-
-  entry.subscribers.add(subscriber);
-
-  return {
-    get connected() {
-      return entry.connected;
-    },
-    unsubscribe: () => {
-      entry.subscribers.delete(subscriber);
-      if (entry.subscribers.size === 0) {
-        entry.source.close();
-        pool.delete(poolKey);
-        withDevtools((mod) => {
-          if (entry.devId) mod.unregisterConnection(entry.devId);
-        });
-      }
-    },
-  };
+  return acquireSseConnection(
+    getContractKey(key),
+    () => getContractEventSourceUrl(key),
+    key.withCredentials,
+    key.serverUrl,
+    key.contractId,
+    subscriber,
+  );
 }
 
 export function __getConnectionPoolSizeForTests() {

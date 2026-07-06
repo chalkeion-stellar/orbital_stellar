@@ -1,3 +1,4 @@
+import { fullJitterBackoffMs } from "./backoff.js";
 import type { ContractSubscriptionFilter, ContractAddress } from "./index.js";
 import type {
   GetEventsOptions,
@@ -479,11 +480,11 @@ export class SorobanSubscriber extends EventEmitter {
               emittedAt: new Date().toISOString(),
             });
           } else {
-            const exponentialDelay = Math.min(
-              this.initialDelayMs * 2 ** (this.reconnectAttempt - 1),
+            delayMs = fullJitterBackoffMs(
+              this.reconnectAttempt,
+              this.initialDelayMs,
               this.maxDelayMs,
             );
-            delayMs = Math.floor(Math.random() * exponentialDelay);
             this.emit("engine.reconnecting", {
               type: "engine.reconnecting",
               attempt: this.reconnectAttempt,

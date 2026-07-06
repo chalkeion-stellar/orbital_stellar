@@ -21,20 +21,12 @@
 
 export const REGISTRY_SPEC_VERSION = 1;
 
-import { LruCache } from "./LruCache.js";
+import { TtlLruCache, DEFAULT_MAX_CACHE_SIZE, DEFAULT_CACHE_TTL_MS } from "./TtlLruCache.js";
 import type {
   AbiRegistryClientConfig,
   AbiRegistryClientTransport,
   XdrContractSpec,
 } from "./types.js";
-
-const DEFAULT_MAX_CACHE_SIZE = 512;
-const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
-
-type CacheEntry = {
-  value: XdrContractSpec | null;
-  expiresAt: number;
-};
 
 /**
  * HTTP client for the Orbital ABI Registry API.
@@ -50,14 +42,15 @@ type CacheEntry = {
 export class AbiRegistryClient {
   private readonly baseUrl: string;
   private readonly transport: AbiRegistryClientTransport;
-  private readonly cache: LruCache<string, CacheEntry>;
-  private readonly ttlMs: number;
+  private readonly cache: TtlLruCache<XdrContractSpec | null>;
 
   constructor(config: AbiRegistryClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "");
     this.transport = config.transport ?? fetch.bind(globalThis);
-    this.ttlMs = config.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
-    this.cache = new LruCache(config.maxCacheSize ?? DEFAULT_MAX_CACHE_SIZE);
+    this.cache = new TtlLruCache(
+      config.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS,
+      config.maxCacheSize ?? DEFAULT_MAX_CACHE_SIZE,
+    );
   }
 
   /** Fetch a single contract spec (cached). */
@@ -122,20 +115,11 @@ export class AbiRegistryClient {
   }
 
   private getCached(contractId: string): XdrContractSpec | null | undefined {
-    const entry = this.cache.get(contractId);
-    if (!entry) return undefined;
-    if (Date.now() > entry.expiresAt) {
-      this.cache.delete(contractId);
-      return undefined;
-    }
-    return entry.value;
+    return this.cache.get(contractId);
   }
 
   private setCache(contractId: string, value: XdrContractSpec | null): void {
-    this.cache.set(contractId, {
-      value,
-      expiresAt: Date.now() + this.ttlMs,
-    });
+    this.cache.set(contractId, value);
   }
 
   /**

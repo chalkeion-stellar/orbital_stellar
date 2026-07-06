@@ -2,11 +2,8 @@
 // Provides an ABI registry client that reads contract specs from a local directory.
 // This enables offline or self‑hosted usage without any network calls.
 
-import { LruCache } from "./LruCache.js";
+import { TtlLruCache, DEFAULT_MAX_CACHE_SIZE, DEFAULT_CACHE_TTL_MS } from "./TtlLruCache.js";
 import type { XdrContractSpec } from "./types.js";
-
-const DEFAULT_MAX_CACHE_SIZE = 512;
-const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Configuration for the LocalAbiRegistryClient.
@@ -22,21 +19,17 @@ export interface LocalAbiRegistryClientConfig {
   cacheTtlMs?: number;
 }
 
-type CacheEntry = {
-  value: XdrContractSpec | null;
-  expiresAt: number;
-};
-
 export class LocalAbiRegistryClient {
   private readonly specsDir: string;
-  private readonly cache: LruCache<string, CacheEntry>;
-  private readonly ttlMs: number;
+  private readonly cache: TtlLruCache<XdrContractSpec | null>;
 
   constructor(config: LocalAbiRegistryClientConfig) {
     // Remove trailing slash if present
     this.specsDir = config.specsDir.replace(/\\\/$/, "");
-    this.ttlMs = config.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
-    this.cache = new LruCache(config.maxCacheSize ?? DEFAULT_MAX_CACHE_SIZE);
+    this.cache = new TtlLruCache(
+      config.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS,
+      config.maxCacheSize ?? DEFAULT_MAX_CACHE_SIZE,
+    );
   }
 
   /** Fetch a single contract spec from the local directory (cached). */
@@ -74,17 +67,11 @@ export class LocalAbiRegistryClient {
   }
 
   private getCached(contractId: string): XdrContractSpec | null | undefined {
-    const entry = this.cache.get(contractId);
-    if (!entry) return undefined;
-    if (Date.now() > entry.expiresAt) {
-      this.cache.delete(contractId);
-      return undefined;
-    }
-    return entry.value;
+    return this.cache.get(contractId);
   }
 
   private setCache(contractId: string, value: XdrContractSpec | null): void {
-    this.cache.set(contractId, { value, expiresAt: Date.now() + this.ttlMs });
+    this.cache.set(contractId, value);
   }
 
   private async loadFromDisk(contractId: string): Promise<XdrContractSpec | null> {
@@ -94,7 +81,7 @@ export class LocalAbiRegistryClient {
       const data = await readFile(path, { encoding: "utf8" });
       const spec: XdrContractSpec = JSON.parse(data);
       return spec;
-    } catch (e) {
+    } catch {
       // Missing file or parse error – treat as not found.
       return null;
     }
