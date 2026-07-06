@@ -40,8 +40,8 @@ jobs:
       - name: Build pulse-core
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
 
-      - name: Typecheck pulse-webhooks
-        run: pnpm tsc --noEmit -p packages/pulse-webhooks/tsconfig.json
+      - name: Build pulse-webhooks
+        run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
 
       - name: Typecheck pulse-notify
         run: pnpm tsc --noEmit -p packages/pulse-notify/tsconfig.json
