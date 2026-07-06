@@ -48,9 +48,6 @@ export type PostgresDeadLetterStoreApi = {
   delete(id: string): Promise<boolean>;
 };
 
-/** @deprecated Use {@link PostgresDeadLetterStoreApi} instead. */
-export type DeadLetterStore = PostgresDeadLetterStoreApi;
-
 type DeadLetterRow = {
   id: string | number;
   url: string;

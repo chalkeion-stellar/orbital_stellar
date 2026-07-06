@@ -19,25 +19,6 @@ function toCamelCase(value: string): string {
   return pascal ? pascal.charAt(0).toLowerCase() + pascal.slice(1) : value;
 }
 
-function toIdentifierName(value: string): string {
-  const normalized = value.replace(/[^a-zA-Z0-9]+/g, "_");
-  const parts = normalized.split("_").filter(Boolean);
-  if (parts.length === 0) {
-    return "value";
-  }
-  return parts
-    .map((part, index) => {
-      const cleaned = part.replace(/^[0-9]+/, "");
-      if (!cleaned) {
-        return index === 0 ? "value" : "value";
-      }
-      return index === 0
-        ? cleaned.toLowerCase()
-        : cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
-    })
-    .join("");
-}
-
 function ensureUniqueName(base: string, used: Set<string>): string {
   if (!used.has(base)) {
     used.add(base);
@@ -137,10 +118,7 @@ function mapTypeToZod(type: xdr.ScSpecTypeDef | undefined): string {
   }
 }
 
-export function generateContractArtifacts(
-  spec: XdrContractSpec,
-  contractName: string,
-): GeneratedContractArtifacts {
+export function generateContractArtifacts(spec: XdrContractSpec): GeneratedContractArtifacts {
   const entries = spec.entries
     .map((entry) => {
       try {
@@ -198,7 +176,7 @@ export function generateContractArtifacts(
   };
 }
 
-export function generateContractTypes(spec: XdrContractSpec, outputPath: string): string {
-  const artifacts = generateContractArtifacts(spec, outputPath);
+export function generateContractTypes(spec: XdrContractSpec): string {
+  const artifacts = generateContractArtifacts(spec);
   return [artifacts.declarations, artifacts.schemas].filter(Boolean).join("\n\n");
 }

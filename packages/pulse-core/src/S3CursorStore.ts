@@ -50,5 +50,3 @@ export class S3CursorStore {
     await this.s3.putObject({ Bucket: this.bucket, Key, Body });
   }
 }
-
-export default S3CursorStore;
