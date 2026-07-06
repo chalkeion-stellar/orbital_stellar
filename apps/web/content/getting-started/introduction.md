@@ -58,7 +58,7 @@ Orbital normalizes the full Stellar classic operation set into a typed `Normaliz
 - **Liquidity pools** — `lp.deposited`, `lp.withdrawn`
 - **Data entries** — `data.set`, `data.cleared`
 
-Soroban contract events are coming in Phase 1 (Q2–Q3 2026). See the [roadmap](https://github.com/orbital/orbital/blob/main/ROADMAP.md).
+Soroban contract events are also supported — see the [Soroban Event Subscription guide](/docs/guides/soroban-subscription).
 
 ## Production hosting
 

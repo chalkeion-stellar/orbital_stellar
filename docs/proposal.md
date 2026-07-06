@@ -1,10 +1,10 @@
 # Orbital — Stellar's Real-Time Event SDK
 
 **Proposal Track:** SCF Infrastructure Grant (Build Award)
-**Status:** Phase 0 shipped (`v0.1.0`) · Requesting funding for Phase 1 (`v1.0`)
+**Status:** Phase 0 shipped (`v0.1.0`) · Phase 1's Soroban subscription, ABI registry client, and cursor persistence have since shipped too · Requesting funding for the remaining Phase 1 milestones (discriminated union refinement, starter boilerplates, `v1.0` stability pledge)
 **Repository:** https://github.com/determined-001/orbital_stellar
 **License:** MIT
-**Last updated:** 2026-05-29
+**Last updated:** 2026-07-06
 
 ---
 
@@ -30,15 +30,16 @@
 
 Orbital is the open-source SDK layer Stellar developers reach for when they need real-time event subscriptions, signed webhook delivery, and React integration — the primitives every team currently re-implements from scratch on top of Horizon SSE and Stellar RPC.
 
-Three MIT-licensed packages, designed to be composed and (at Phase 1) published to npm with no vendor lock-in:
+Four MIT-licensed packages, designed to be composed and published to npm under the `@orbital-stellar` scope with no vendor lock-in:
 
 | Package | Role |
 |---|---|
-| `@orbital-stellar/pulse-core` | Event engine — Horizon + Stellar RPC subscription, normalized typed events, reconnection |
-| `@orbital-stellar/pulse-webhooks` | HMAC-signed webhook delivery, retry, SSRF hardening, edge-runtime verification |
-| `@orbital-stellar/pulse-notify` | React hooks (`useStellarEvent`, `useStellarPayment`, `useStellarActivity`) |
+| `@orbital-stellar/pulse-core` | Event engine — Horizon + Stellar RPC (Soroban) subscription, normalized typed events, reconnection, cursor persistence |
+| `@orbital-stellar/pulse-webhooks` | HMAC-signed webhook delivery, retry with durable queues, SSRF hardening, edge-runtime verification |
+| `@orbital-stellar/pulse-notify` | React hooks (`useStellarEvent`, `useContractEvent`, `useStellarPayment`, `useStellarActivity`) |
+| `@orbital-stellar/abi-registry` | Soroban ABI client, schema helpers, registry publisher interface |
 
-Phase 0 (foundation) shipped as [`v0.1.0`](../CHANGELOG.md) — full classic operation taxonomy, edge-runtime verification, React hooks, reference composition. This proposal funds **Phase 1: production-grade `v1.0`** — the milestone at which any Stellar team can build on Orbital with a stability pledge.
+Phase 0 (foundation) shipped as [`v0.1.0`](../CHANGELOG.md) — full classic operation taxonomy, edge-runtime verification, React hooks, reference composition. Since then, three of Phase 1's six milestones (M1 Soroban subscription, M2 ABI registry client, and the cursor-persistence half of M4) have also shipped. This proposal funds the **remaining Phase 1 work**: discriminated union refinement (M3), starter boilerplates (M5), and the `v1.0` stability pledge (M6) — the milestone at which any Stellar team can build on Orbital with a documented semver contract.
 
 ---
 
@@ -100,26 +101,26 @@ Phase 0 is complete and released as [`v0.1.0`](../CHANGELOG.md). Independently v
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — system diagrams, component inventory, lifecycle sequence, trust boundaries.
 - [`PROGRESS.md`](../PROGRESS.md) — Phase 0 completion snapshot.
 - [`ROADMAP.md`](../ROADMAP.md) — multi-year phase plan.
-- Per-package READMEs: [`pulse-core`](../packages/pulse-core/README.md), [`pulse-webhooks`](../packages/pulse-webhooks/README.md), [`pulse-notify`](../packages/pulse-notify/README.md).
-- Test suites: **103 tests** in `pulse-core` (102 passing + 1 skipped), **13 tests** in `pulse-webhooks`, all green in CI.
+- Per-package READMEs: [`pulse-core`](../packages/pulse-core/README.md), [`pulse-webhooks`](../packages/pulse-webhooks/README.md), [`pulse-notify`](../packages/pulse-notify/README.md), [`abi-registry`](../packages/abi-registry/README.md).
+- Test suites: **500+ tests** in `pulse-core`, **180+ tests** in `pulse-webhooks`, all green in CI.
 
 ---
 
 ## Phase 1 — Production-grade `v1.0` (the SCF-funded milestone)
 
-Phase 1 brings Orbital from "useful prototype" to a **stability-pledged `v1.0`** that teams can build production systems on. Six concrete deliverables, each with a clear merge criterion.
+Phase 1 brings Orbital from "useful prototype" to a **stability-pledged `v1.0`** that teams can build production systems on. Six concrete deliverables. M1, M2, and the cursor-persistence half of M4 have shipped since this proposal was first drafted; M3, M5, and M6 remain the funded scope.
 
-### M1 · Soroban event subscription
+### M1 · Soroban event subscription — ✅ Delivered
 
-Subscribe to smart contract events by contract ID and topic filter via Stellar RPC. Normalized into the same `NormalizedEvent` taxonomy as classic operations.
+Subscribe to smart contract events by contract ID and topic filter via Stellar RPC. Normalized into the same `NormalizedEvent` taxonomy as classic operations, via `engine.subscribeContract({ contractId, topics })`.
 
-**Done when:** A test subscribing to a deployed Soroban contract on testnet receives a typed event payload within 2 ledgers of emission.
+**Done when:** A test subscribing to a deployed Soroban contract on testnet receives a typed event payload within 2 ledgers of emission. — met; see `packages/pulse-core/test/SorobanSubscriber.*.test.ts` and the integration test suite.
 
-### M2 · ABI Registry client
+### M2 · ABI Registry client — ✅ Delivered
 
-Auto-decode Soroban event payloads into typed, human-readable JSON using a community-contributed ABI registry. Solves the "raw bytes" problem that makes Soroban events painful to consume today.
+Auto-decode Soroban event payloads into typed, human-readable JSON using the `@orbital-stellar/abi-registry` client. Solves the "raw bytes" problem that makes Soroban events painful to consume today.
 
-**Done when:** A registered contract's events are fully typed in the consumer's TypeScript autocomplete without manual decoding.
+**Done when:** A registered contract's events are fully typed in the consumer's TypeScript autocomplete without manual decoding. — met; `EventEngine` enriches `contract.emitted` with typed `decodedData` when an `AbiRegistryClient` is configured.
 
 ### M3 · Discriminated union refinement
 
@@ -127,11 +128,11 @@ Narrow `NormalizedEvent` types so `switch (event.type)` produces exhaustive type
 
 **Done when:** A `switch` over `event.type` with no `default` clause produces a TypeScript error if any event type is unhandled.
 
-### M4 · Cursor persistence and replay primitives
+### M4 · Cursor persistence and replay primitives — cursor half ✅ delivered, replay half remaining
 
-Pluggable durable adapters (Redis, Postgres, S3) so consumers can implement crash-resilient streams and webhook replay.
+Pluggable durable adapters so consumers can implement crash-resilient streams and webhook replay. Cursor persistence (`CursorStore`: memory, file, Postgres, Redis, S3) has shipped in `pulse-core`; durable webhook retry queues (`RetryQueue`: memory, Redis, SQS) have shipped in `pulse-webhooks`. Remaining under this milestone: hardening and documenting the replay story end-to-end (see `packages/pulse-webhooks/src/cli.ts`'s `orbital dlq replay` command).
 
-**Done when:** Killing the worker process mid-stream and restarting it does not lose or duplicate events when configured with a Postgres cursor adapter.
+**Done when:** Killing the worker process mid-stream and restarting it does not lose or duplicate events when configured with a Postgres cursor adapter. — met; see `packages/pulse-core/test/EventEngine.sorobanCursorResume.test.ts` and `test/integration/cursorResume.test.ts`.
 
 ### M5 · Starter boilerplates
 
@@ -139,11 +140,11 @@ Three reference projects: `orbital-next-starter`, `orbital-express-starter`, `or
 
 **Done when:** Each starter is published, deploys to Vercel/Railway free tier, and is documented end-to-end on the marketing site.
 
-### M6 · `v1.0` stability pledge + npm publish
+### M6 · `v1.0` stability pledge + npm publish — npm publish ✅ delivered, stability pledge remaining
 
-All three packages published under `@orbital-stellar/` on npm with a documented stability contract: no breaking changes within `v1.x` without a 6-month deprecation window.
+All four packages are already published under `@orbital-stellar/` on npm. Remaining under this milestone: a documented stability contract — no breaking changes within `v1.x` without a 6-month deprecation window.
 
-**Done when:** `pnpm add @orbital-stellar/pulse-core` works, semver policy is documented in `STABILITY.md`, and a v1.0 release is tagged on GitHub.
+**Done when:** `pnpm add @orbital-stellar/pulse-core` works — met — semver policy is documented in `STABILITY.md`, and a v1.0 release is tagged on GitHub — both remaining.
 
 ---
 
@@ -163,10 +164,10 @@ All three packages published under `@orbital-stellar/` on npm with a documented 
 |---|---|---|---|
 | **Solo-maintainer bus factor** | High | High | The grant funds a contributor ladder. Phase 0 already shipped the Stellar Wave Program issue plumbing (150 pre-planned issues with complexity-tier rewards) and a contributors-table workflow. Target: ≥3 sustained external contributors with merged PRs by Phase 1 close. |
 | **QuickNode achieves feature parity within 12–18 months** | Medium | Medium | Moat is engineering depth + standards authorship, not feature count. Orbital's normalized-event format becomes a Phase 2 SEP submission; once ratified, QuickNode either conforms (validating Orbital) or diverges (fragmenting Stellar). MIT licensing + edge-runtime + React hooks remain hard to replicate inside a generic multi-chain product. |
-| **Soroban event API churn** | Medium | Low | The Soroban subscriber is a pluggable source feeding the same normalization pipeline; upstream churn is isolated to one file (`packages/pulse-core/src/soroban-source.ts` per `docs/ARCHITECTURE.md` §10) and does not propagate to the public `NormalizedEvent` union. |
-| **Horizon → Stellar RPC migration timeline** | Medium | Medium | `CoreConfig.horizonUrl` already supports custom backends; the RPC subscriber lands as M1 in Phase 1, giving consumers a typed migration path before Horizon's deprecation horizon. |
+| **Soroban event API churn** | Medium | Low | The Soroban subscriber is a pluggable source feeding the same normalization pipeline; upstream churn is isolated to `packages/pulse-core/src/SorobanSubscriber.ts` and `SorobanRpcClient.ts` (per `docs/ARCHITECTURE.md` §10) and does not propagate to the public `NormalizedEvent` union. |
+| **Horizon → Stellar RPC migration timeline** | Medium | Medium | `CoreConfig.horizonUrl` already supports custom backends; the RPC subscriber shipped as M1, giving consumers a typed migration path before Horizon's deprecation horizon. |
 | **Webhook secret leak in downstream consumer code** | Low | High | `WebhookDelivery` enforces HMAC-SHA256 with timing-safe comparison and SSRF block-lists by default; receivers use `verifyWebhook` (Node) or `verifyWebhookEdge` (Web Crypto) which both fail closed. See [`docs/ARCHITECTURE.md` §8](./ARCHITECTURE.md#8-trust-boundaries-and-invariants) for the full trust-boundary table. |
-| **Grant-fund exhaustion before Phase 1 milestones complete** | Low | Medium | Milestones are independently shippable. M1, M3, M6 are unblocked from day one. If only $20K of $30K is consumed before pause, M1 + M3 + M6 alone produce a stability-pledged `v1.0` covering Soroban subscription, type narrowing, and the npm publish. |
+| **Grant-fund exhaustion before Phase 1 milestones complete** | Low | Medium | Remaining milestones (M3, M5, M6) are independently shippable. M1, M2, and M4's cursor half are already delivered outside grant funding; M3 and M6 alone would close out a stability-pledged `v1.0` even if M5's starter boilerplates slip. |
 
 ---
 

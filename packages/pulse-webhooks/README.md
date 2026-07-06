@@ -497,6 +497,37 @@ Remove all entries from the store.
 
 Get the total number of entries in the store.
 
+## Durable retry queues
+
+By default, pending retries live in-process — a restart drops them. Pass a `RetryQueue` on `config.retryQueue` to persist them instead:
+
+```ts
+import { WebhookDelivery, RedisRetryQueue } from "@orbital-stellar/pulse-webhooks";
+import Redis from "ioredis";
+
+const redis = new Redis(process.env.REDIS_URL!);
+
+new WebhookDelivery(watcher, {
+  url: "https://your-app.com/hooks/stellar",
+  secret: process.env.WEBHOOK_SECRET!,
+  retryQueue: new RedisRetryQueue(redis),
+});
+```
+
+`RedisRetryQueue` expects a client exposing `zadd` / `zrangebyscore` / `zrevrange` / `zrem` / `zcard` (the `RedisLike` type) — `ioredis` matches this directly; other clients need a thin wrapper.
+
+`WebhookDelivery` polls the queue (`retryQueuePollIntervalMs`, default 1000ms) instead of using in-process `setTimeout` retries when `retryQueue` is configured. On process restart, any records left in the queue are picked back up.
+
+| Adapter | Backing store | Constructor |
+|---|---|---|
+| `MemoryRetryQueue` | In-process `Map` (default if you build one yourself; not persistent — same limitation as no queue at all, useful mainly for tests) | `new MemoryRetryQueue(options?)` |
+| `RedisRetryQueue` | Redis sorted set, keyed by due time | `new RedisRetryQueue(client, options?)` |
+| `SqsRetryQueue` | Amazon SQS (standard or FIFO) | `new SqsRetryQueue(client, options)` |
+
+All three implement the same `RetryQueue` interface (`enqueue`, `dequeue`, `ack`, `nack`, `evictNewest`, `size`), so custom adapters (e.g. Postgres) are a drop-in — see [`src/RetryQueue.ts`](./src/RetryQueue.ts) for the exact contract.
+
+Note: durable retry queues and the `DeadLetterStore` above solve different problems — the retry queue holds *pending* retries so they survive a restart; the DLQ holds *terminally failed* deliveries (retries exhausted) for inspection and replay. They're independent and can be used together.
+
 ## Index Requirements for Adapter Authors
 
 If you persist the dead letter store to a database, create these indexes for query efficiency:
@@ -555,7 +586,7 @@ Always pass `maxAgeMs` explicitly. A consumer that omits the option still receiv
 
 ## Current limitations
 
-- **Retries live in-process.** Restarting the process loses pending retries. Persistent retry queues with pluggable adapters (Redis, Postgres, S3) ship in Phase 1 — see [`ROADMAP.md`](../../ROADMAP.md#wave-13--cursor-persistence-and-replay-primitives).
+- **Retries live in-process unless a `retryQueue` is configured.** See [Durable retry queues](#durable-retry-queues) above for the Redis/SQS adapters that persist pending retries across restarts.
 - **Retries use a small built-in strategy set.** For specialized schedules, pass a custom `BackoffStrategy` through `config.backoff`.
 - **No signature versioning.** The header format is fixed at `x-orbital-signature` (HMAC-SHA256 hex) — there is no `v1=…` prefix. If the algorithm needs to change, a future `x-orbital-signature-v2` header will be introduced alongside `v1` for a deprecation window.
 

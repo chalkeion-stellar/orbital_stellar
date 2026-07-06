@@ -159,8 +159,6 @@ describe("useStellarEvent — onEvent callback", () => {
       return useStellarEvent(SERVER, ADDRESS, { filter, onEvent });
     });
 
-    const renderCountAfterMount = renderCount;
-
     act(() => getSource().onopen?.());
     // onopen triggers a connected state change — renderCount may increase here
     const renderCountAfterOpen = renderCount;

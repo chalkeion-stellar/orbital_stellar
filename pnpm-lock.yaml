@@ -43,6 +43,9 @@ importers:
       '@orbital-stellar/pulse-core':
         specifier: workspace:*
         version: link:../../packages/pulse-core
+      '@orbital-stellar/pulse-webhooks':
+        specifier: workspace:*
+        version: link:../../packages/pulse-webhooks
       framer-motion:
         specifier: ^12.42.1
         version: 12.42.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -117,9 +120,6 @@ importers:
       ajv:
         specifier: ^8.17.1
         version: 8.20.0
-      tsx:
-        specifier: ^4.22.4
-        version: 4.22.4
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -194,9 +194,6 @@ importers:
       size-limit:
         specifier: ^12.1.0
         version: 12.1.0(jiti@2.7.0)
-      tsx:
-        specifier: ^4.22.4
-        version: 4.22.4
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -213,9 +210,6 @@ importers:
       '@types/node':
         specifier: ^26.0.1
         version: 26.0.1
-      tsx:
-        specifier: ^4.22.4
-        version: 4.22.4
       vite:
         specifier: 7.3.3
         version: 7.3.3(@types/node@26.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0)

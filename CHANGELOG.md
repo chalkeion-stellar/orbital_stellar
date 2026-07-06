@@ -6,8 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 This file rolls up changes across the public packages: `@orbital-stellar/pulse-core`,
-`@orbital-stellar/pulse-webhooks`, and `@orbital-stellar/pulse-notify`. Per-package changelogs
-live in each package directory.
+`@orbital-stellar/pulse-webhooks`, `@orbital-stellar/pulse-notify`, and `@orbital-stellar/abi-registry`.
+Per-package changelogs live in each package directory.
 
 ## [Unreleased]
 
@@ -113,7 +113,7 @@ in Phase 1 (Q2–Q3 2026).
   is now a single Next.js file rather than a separate Express server, so
   there is one runtime to deploy when self-hosting the SDKs end-to-end.
 
-### Known limitations
+### Known limitations (as of this release)
 
 - Soroban contract events (`invoke_host_function`) are not yet normalized
   — Phase 1.
@@ -121,3 +121,9 @@ in Phase 1 (Q2–Q3 2026).
   Persistent retry queues ship in Phase 1 alongside cursor persistence.
 - Packages are not yet published to npm. Until `v0.1.0` is tagged and
   released, consume via `pnpm install` against the workspace.
+
+> **Update (2026-07-06):** all three limitations above have since been resolved —
+> Soroban event subscription, durable retry queues, and cursor persistence shipped
+> (see `ROADMAP.md` Wave 1.1–1.3), and all four packages are now published to npm
+> under the `@orbital-stellar` scope (published out-of-band; the `release.yml`
+> npm-publish step is now uncommented for future version bumps).

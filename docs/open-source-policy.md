@@ -39,26 +39,25 @@ Capture the category in open source. Capture the revenue in operations. Never co
 
 Everything below is in `packages/` or `apps/` today, or will be added to one of them. All of it is MIT-licensed via the [`LICENSE`](../LICENSE) at the repo root.
 
-### Today (Phase 0, `v0.1.0`)
+### Shipped today
 
-- `@orbital-stellar/pulse-core` — EventEngine, Watcher, normalization layer, reconnection state machine
-- `@orbital-stellar/pulse-webhooks` — `WebhookDelivery`, `verifyWebhook`, `verifyWebhookEdge`
-- `@orbital-stellar/pulse-notify` — `useStellarEvent`, `useStellarPayment`, `useStellarActivity`
-- Event schemas — the `NormalizedEvent` discriminated union and per-event TypeScript shapes
+- `@orbital-stellar/pulse-core` — EventEngine, Watcher, normalization layer, reconnection state machine, Soroban event subscriber, cursor persistence (`CursorStore` interface + memory/file/Postgres/Redis/S3 adapters)
+- `@orbital-stellar/pulse-webhooks` — `WebhookDelivery`, `verifyWebhook`, `verifyWebhookEdge`, durable retry queues (`RetryQueue` interface + memory/Redis/SQS adapters)
+- `@orbital-stellar/pulse-notify` — `useStellarEvent`, `useContractEvent`, `useStellarPayment`, `useStellarActivity`, `useStellarAddresses`, `useStellarHistory`
+- `@orbital-stellar/abi-registry` — ABI Registry client library, schema, and `RegistryPublisher` interface
+- Event schemas — the `NormalizedEvent` discriminated union and per-event TypeScript shapes, including `contract.invoked` / `contract.emitted`
 - Webhook delivery contract — header format, signing scheme, retry rules
-- Reference composition — the Next.js route handlers in `apps/web/app/api/*` that wire the three packages together end-to-end
+- Reference composition — the Next.js route handlers in `apps/web/app/api/*` that wire the packages together end-to-end
 - All test suites
 - All ADRs (`docs/adr/`)
 - Marketing + documentation site source (`apps/web/`)
 - Per-package READMEs, CONTRIBUTING, SECURITY, CHANGELOG
 
-### Phase 1 (`v1.0`, Q2–Q3 2026)
+### Remaining Phase 1 work
 
-- Soroban event subscriber (plug into the same normalization pipeline)
-- ABI Registry client library, schema, and RegistryPublisher interface
-- Cursor persistence **interface** + the in-memory and on-disk reference adapters
-- Replay-queue **interface** + the in-memory reference adapter
 - Starter boilerplates (`orbital-next-starter`, `orbital-express-starter`, `orbital-anchor-starter`)
+- `v1.0` stability pledge (`STABILITY.md` — semver contract, deprecation window)
+- ABI Registry schema published as a draft SEP; hosted registry service (see [ABI Registry](#abi-registry) below)
 
 ### ABI Registry
 
@@ -116,13 +115,13 @@ These live in a **separate private repository** (Orbital Cloud) that imports the
 
 The public packages expose **interfaces**; the private repository ships **adapters** against those interfaces. The interfaces stay MIT; the adapters can be closed.
 
-Examples of the boundary, today and in Phase 1:
+Examples of the boundary:
 
 | Public interface (MIT) | Private adapter (Closed) |
 |---|---|
 | `CoreConfig.horizonUrl` | Orbital-operated mainnet Horizon node behind an authenticated endpoint |
-| `CoreConfig.cursorStore` *(Phase 1)* | Multi-region Postgres cursor store with consensus on dedup |
-| `WebhookDelivery.retryQueue` *(Phase 1)* | Managed Redis / Postgres queue with manual replay UI |
+| `CoreConfig.cursorStore` | Multi-region Postgres cursor store with consensus on dedup |
+| `WebhookDelivery.retryQueue` | Managed Redis / Postgres queue with manual replay UI |
 | `WebhookDelivery` event handlers (`webhook.failed`, `webhook.dropped`) | Hosted dead-letter explorer and forensics console |
 | `EventEngine.subscribe(address, { filter })` | Hosted address-and-event-type RBAC scopes |
 

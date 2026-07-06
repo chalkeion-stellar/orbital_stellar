@@ -1,4 +1,3 @@
-import { CursorStore } from "./CursorStore.js";
 import type { StellarAmount } from "./amount.js";
 import type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
 import type { ClaimPredicate } from "./claimPredicate.js";

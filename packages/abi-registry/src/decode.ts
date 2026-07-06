@@ -442,17 +442,6 @@ function parseSpecEntries(entries: string[]): xdr.ScSpecEntry[] {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function extractSymbol(raw: unknown): string | null {
-  if (typeof raw === "string") return raw;
-  if (raw !== null && typeof raw === "object") {
-    const obj = raw as Record<string, unknown>;
-    if ("sym" in obj) return String(obj["sym"]);
-    if ("symbol" in obj) return String(obj["symbol"]);
-    if ("str" in obj) return String(obj["str"]);
-  }
-  return null;
-}
-
 function bufferToHex(value: unknown): string {
   if (value instanceof Uint8Array || Buffer.isBuffer(value as object)) {
     return Buffer.from(value as Uint8Array).toString("hex");

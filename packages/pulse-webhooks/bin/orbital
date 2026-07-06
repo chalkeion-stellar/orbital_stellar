@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { DeadLetterStore } from '../src/MemoryDeadLetterStore.js';
-import { listDLQ, dumpDLQ, replayDLQ } from '../src/cli.js';
+import { MemoryDeadLetterStore } from '../dist/MemoryDeadLetterStore.js';
+import { listDLQ, dumpDLQ, replayDLQ } from '../dist/cli.js';
+import { signWebhookPayload } from '../dist/signing.js';
 
 function printUsage() {
-  console.error(`Usage: orbital dlq <command> [options]\n\nCommands:\n  list  --url <url> [--since <ISO8601>] [--limit <n>]\n  dump\n  replay <id>\n`);
+  console.error(`Usage: orbital dlq <command> [options]\n\nCommands:\n  list  --url <url> [--since <ISO8601>] [--limit <n>]\n  dump\n  replay <id> [--secret <value>]\n\nEnv:\n  ORBITAL_WEBHOOK_SECRET  Signing secret used to re-sign replayed deliveries\n                          (overridden by --secret).\n`);
   process.exit(1);
 }
 
@@ -14,41 +15,81 @@ if (args.length < 2 || args[0] !== 'dlq') {
 }
 
 const command = args[1];
-const store = new DeadLetterStore();
+const store = new MemoryDeadLetterStore();
 
-switch (command) {
-  case 'list': {
-    const options: any = {};
-    for (let i = 2; i < args.length; i++) {
-      const arg = args[i];
-      if (arg === '--url' && i + 1 < args.length) {
-        options.url = args[++i];
-      } else if (arg === '--since' && i + 1 < args.length) {
-        options.since = args[++i];
-      } else if (arg === '--limit' && i + 1 < args.length) {
-        options.limit = parseInt(args[++i], 10);
-      } else {
-        console.error(`Unknown option ${arg}`);
-        printUsage();
+async function main() {
+  switch (command) {
+    case 'list': {
+      const options = {};
+      for (let i = 2; i < args.length; i++) {
+        const arg = args[i];
+        if (arg === '--url' && i + 1 < args.length) {
+          options.url = args[++i];
+        } else if (arg === '--since' && i + 1 < args.length) {
+          options.since = args[++i];
+        } else if (arg === '--limit' && i + 1 < args.length) {
+          options.limit = parseInt(args[++i], 10);
+        } else {
+          console.error(`Unknown option ${arg}`);
+          printUsage();
+        }
       }
+      await listDLQ(store, options);
+      break;
     }
-    listDLQ(store, options);
-    break;
-  }
-  case 'dump': {
-    dumpDLQ(store);
-    break;
-  }
-  case 'replay': {
-    const id = args[2];
-    if (!id) {
-      console.error('Missing dlq id');
+    case 'dump': {
+      await dumpDLQ(store);
+      break;
+    }
+    case 'replay': {
+      const id = args[2];
+      if (!id) {
+        console.error('Missing dlq id');
+        printUsage();
+        return;
+      }
+
+      let secret = process.env.ORBITAL_WEBHOOK_SECRET;
+      for (let i = 3; i < args.length; i++) {
+        if (args[i] === '--secret' && i + 1 < args.length) {
+          secret = args[++i];
+        }
+      }
+
+      store.setReplayHandler(async (entry) => {
+        if (!secret) {
+          throw new Error(
+            'No signing secret configured — pass --secret or set ORBITAL_WEBHOOK_SECRET',
+          );
+        }
+
+        const payload = JSON.stringify(entry.event);
+        const timestamp = Date.now().toString();
+        const signature = signWebhookPayload(payload, timestamp, secret);
+
+        const res = await fetch(entry.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-orbital-signature': signature,
+            'x-orbital-timestamp': timestamp,
+            'x-orbital-attempt': String(entry.attempts + 1),
+          },
+          body: payload,
+        });
+
+        if (!res.ok) {
+          throw new Error(`Replay delivery failed: HTTP ${res.status}`);
+        }
+      });
+
+      await replayDLQ(store, id);
+      break;
+    }
+    default:
+      console.error(`Unknown subcommand ${command}`);
       printUsage();
-    }
-    replayDLQ(store, id);
-    break;
   }
-  default:
-    console.error(`Unknown subcommand ${command}`);
-    printUsage();
 }
+
+await main();

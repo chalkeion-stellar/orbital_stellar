@@ -41,9 +41,10 @@ That installs all workspace packages. No additional steps are needed to run the 
 ```
 orbital/
 ├── packages/
-│   ├── pulse-core/       # EventEngine, Watcher, Horizon + RPC streaming
+│   ├── pulse-core/       # EventEngine, Watcher, Horizon + Soroban RPC streaming
 │   ├── pulse-webhooks/   # HMAC delivery, retry, SSRF protection
-│   └── pulse-notify/     # React hooks
+│   ├── pulse-notify/     # React hooks
+│   └── abi-registry/     # Soroban ABI client, schema helpers, registry publisher
 ├── apps/
 │   └── web/              # Next.js marketing + documentation site
 ├── tsconfig.base.json    # Shared TypeScript config

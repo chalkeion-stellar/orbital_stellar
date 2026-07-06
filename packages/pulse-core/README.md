@@ -8,7 +8,7 @@ pnpm add @orbital-stellar/pulse-core
 
 ## What it does
 
-`pulse-core` opens a single streaming connection to Horizon (and, coming soon, Stellar RPC for Soroban events), normalizes each incoming record into a uniform shape, and emits it to any `Watcher` subscribed to the affected address. Reconnection, backoff, and cleanup are handled automatically.
+`pulse-core` opens streaming connections to Horizon and, when configured, Stellar RPC for Soroban contract events, normalizes each incoming record into a uniform shape, and emits it to any `Watcher` subscribed to the affected address. Reconnection, backoff, and cleanup are handled automatically.
 
 You install `pulse-core` when you want to consume Stellar events in-process — typically inside a server, background worker, or CLI. If you need webhook delivery or React integration, layer [`@orbital-stellar/pulse-webhooks`](../pulse-webhooks) or [`@orbital-stellar/pulse-notify`](../pulse-notify) on top.
 
@@ -249,9 +249,8 @@ Each matching contract subscription receives both the typed event and the `*` wi
 
 ## Current limitations
 
-- **Soroban subscription is still Phase 1 work.** Contract event normalization and in-process routing are present, with RPC handoff and restart resiliency covered by tests. Production cursor persistence and broader RPC integration continue under Phase 1 (`v1.0`, Q2–Q3 2026). Open issues tracked under [`core-engine`](https://github.com/determined-001/orbital_stellar/labels/core-engine).
 - **In-process only.** Horizontal scale and multi-region coordination belong in the deployment layer, not in the SDK. See [`docs/open-source-policy.md`](../../docs/open-source-policy.md) for the public/private boundary.
-- **Cursor starts at `now` on every run.** Resume-from-cursor with pluggable adapters ships in Phase 1 — see [`ROADMAP.md`](../../ROADMAP.md#wave-13--cursor-persistence-and-replay-primitives).
+- **Cursor starts at `now` unless a `cursorStore` is configured.** Without `CoreConfig.cursorStore`, every run starts from `"now"` (matches previous behavior). Passing a `cursorStore` (memory, file, Postgres, Redis, or S3 adapter — see [`ROADMAP.md`](../../ROADMAP.md#wave-13--cursor-persistence-and-replay-primitives)) makes the engine resume from the last persisted cursor on reconnect or restart instead.
 
 ## Related documents
 

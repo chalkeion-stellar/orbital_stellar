@@ -8,7 +8,7 @@
 [![Node](https://img.shields.io/badge/node-20%20%7C%2022-339933?style=flat-square&logo=node.js)](.github/workflows/ci.yml)
 [![Conventional Commits](https://img.shields.io/badge/commits-conventional-fe5196?style=flat-square&logo=conventionalcommits)](https://www.conventionalcommits.org)
 
-> **Status**: Phase 0 — `v0.1.0` on npm &nbsp;·&nbsp; **Networks**: testnet + mainnet &nbsp;·&nbsp; **License**: MIT
+> **Status**: `v0.1.0` on npm &nbsp;·&nbsp; **Networks**: testnet + mainnet &nbsp;·&nbsp; **License**: MIT
 
 **Stellar's biggest developer-experience gap isn't a missing API — it's that Horizon's firehose still requires every team to build their own event delivery.**
 
@@ -50,12 +50,12 @@ The longer-form thesis, the multi-year vision, and the SCF grant case live in [`
 
 | Package | Description | Status |
 |---|---|---|
-| [`@orbital-stellar/pulse-core`](./packages/pulse-core) | EventEngine — Horizon subscription, normalization, reconnection, rate-limit handling | ✅ Phase 0 |
-| [`@orbital-stellar/pulse-webhooks`](./packages/pulse-webhooks) | HMAC-signed webhook delivery + verification (Node + edge runtimes) | ✅ Phase 0 |
-| [`@orbital-stellar/pulse-notify`](./packages/pulse-notify) | React hooks — `useStellarEvent`, `useStellarPayment`, `useStellarActivity` | ✅ Phase 0 |
-| [`@orbital-stellar/abi-registry`](./packages/abi-registry) | Canonical Soroban ABI client, schema helpers, and registry publisher interface | ✅ Phase 1 |
+| [`@orbital-stellar/pulse-core`](./packages/pulse-core) | EventEngine — Horizon + Soroban subscription, normalization, reconnection, rate-limit handling, cursor persistence | ✅ Shipped |
+| [`@orbital-stellar/pulse-webhooks`](./packages/pulse-webhooks) | HMAC-signed webhook delivery + verification (Node + edge runtimes), durable retry queues | ✅ Shipped |
+| [`@orbital-stellar/pulse-notify`](./packages/pulse-notify) | React hooks — `useStellarEvent`, `useContractEvent`, `useStellarPayment`, `useStellarActivity`, `useStellarAddresses`, `useStellarHistory`, `StellarConnectionStatus`, `StellarEventBoundary` | ✅ Shipped |
+| [`@orbital-stellar/abi-registry`](./packages/abi-registry) | Canonical Soroban ABI client, schema helpers, and registry publisher interface | ✅ Shipped |
 
-> The full classic-operation taxonomy is shipped (payments, account create/merge/options/bump-sequence, trustlines + auth, offers, claimables, liquidity pools, manage-data). Soroban contract events are Phase 1 (Q2–Q3 2026) — see [`ROADMAP.md`](ROADMAP.md).
+> The full classic-operation taxonomy is shipped (payments, account create/merge/options/bump-sequence, trustlines + auth, offers, claimables, liquidity pools, manage-data), alongside Soroban contract event subscription (`engine.subscribeContract`), cursor persistence, and the ABI registry client — see [`ROADMAP.md`](ROADMAP.md).
 
 ---
 
@@ -144,13 +144,14 @@ Run it against testnet, send a test payment from the [Stellar Laboratory](https:
 flowchart LR
   subgraph Stellar["Stellar network"]
     Horizon["Horizon REST + SSE"]
-    RPC["Stellar RPC<br/>(Soroban) — Phase 1"]
+    RPC["Stellar RPC<br/>(Soroban events)"]
   end
 
   subgraph Core["@orbital-stellar/pulse-core"]
     Engine["EventEngine<br/>subscribe · reconnect · backoff"]
     Watcher["Watcher<br/>per-address pub/sub"]
     Normalize["Normalize<br/>13 op types → typed events"]
+    Cursor["Cursor persistence<br/>memory · file · Postgres · Redis · S3"]
   end
 
   subgraph Webhooks["@orbital-stellar/pulse-webhooks"]
@@ -163,8 +164,9 @@ flowchart LR
   end
 
   Horizon --> Engine
-  RPC -.-> Engine
+  RPC --> Engine
   Engine --> Normalize --> Watcher
+  Engine --> Cursor
   Watcher --> Sign
   Watcher --> Hooks
   Sign -->|x-orbital-signature| YourBackend["Your endpoint"]
@@ -204,8 +206,7 @@ Two paths:
 
 ## Roadmap
 
-- **Now (Phase 0)** — Full classic operation taxonomy, edge-runtime webhook verification, React hooks ✅
-- **Q2–Q3 2026 (Phase 1, `v1.0`)** — Soroban event subscription, ABI registry client, cursor persistence, replay adapters, npm publish, stability pledge
+- **Shipped** — Full classic operation taxonomy, edge-runtime webhook verification, React hooks, Soroban event subscription, ABI registry client, cursor persistence, durable retry queues, npm publish ✅
 - **2027 (Phase 2)** — `@orbital-stellar/hooks`, `@orbital-stellar/payments`, `@orbital-stellar/auth`, first SEP submission
 - **2028+ (Phase 3)** — `@orbital-stellar/x402`, `@orbital-stellar/agent-sdk`, intent compiler
 

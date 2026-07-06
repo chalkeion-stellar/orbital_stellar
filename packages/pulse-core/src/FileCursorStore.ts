@@ -102,5 +102,3 @@ export class FileCursorStore extends CursorStore {
     }
   }
 }
-
-export default FileCursorStore;

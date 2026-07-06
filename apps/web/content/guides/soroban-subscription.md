@@ -3,7 +3,7 @@ title: Soroban Event Subscription
 description: Subscribe to Soroban smart-contract events with engine.subscribeContract, ContractFilter, and the contract.emitted / contract.invoked event shapes.
 ---
 
-Orbital's Phase 1 adds native Soroban support. `EventEngine` polls the Soroban RPC for contract events and delivers them to your watchers as strongly-typed `contract.emitted` and `contract.invoked` events.
+Orbital ships native Soroban support. `EventEngine` polls the Soroban RPC for contract events and delivers them to your watchers as strongly-typed `contract.emitted` and `contract.invoked` events.
 
 ## Setup
 

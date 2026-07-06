@@ -1,41 +1,28 @@
 import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
-
-type ConnectionKey = {
-  serverUrl: string;
-  address: string;
-  token?: string;
-};
-
-type ConnectionSubscriber = {
-  onOpen: () => void;
-  onEvent: (event: NormalizedEvent) => void;
-  onParseError: () => void;
-  onError: () => void;
-  onAuthExpired?: () => void;
-};
+import type { WsConnectionKey, WsConnectionSubscriber } from "./connectionTypes.js";
 
 type WsEntry = {
   ws: WebSocket;
-  subscribers: Set<ConnectionSubscriber>;
+  subscribers: Set<WsConnectionSubscriber>;
   connected: boolean;
 };
 
 const pool = new Map<string, WsEntry>();
 
-function getKey({ serverUrl, address, token }: ConnectionKey): string {
+function getKey({ serverUrl, address, token }: WsConnectionKey): string {
   return JSON.stringify([serverUrl, address, token ?? ""]);
 }
 
-function getWsUrl({ serverUrl, address, token }: ConnectionKey): string {
+function getWsUrl({ serverUrl, address, token }: WsConnectionKey): string {
   const base = serverUrl.replace(/^http/, "ws") + `/events/${address}`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
-function notify(entry: WsEntry, fn: (s: ConnectionSubscriber) => void) {
+function notify(entry: WsEntry, fn: (s: WsConnectionSubscriber) => void) {
   for (const s of [...entry.subscribers]) fn(s);
 }
 
-export function acquireWsConnection(key: ConnectionKey, subscriber: ConnectionSubscriber) {
+export function acquireWsConnection(key: WsConnectionKey, subscriber: WsConnectionSubscriber) {
   const poolKey = getKey(key);
   let entry = pool.get(poolKey);
 

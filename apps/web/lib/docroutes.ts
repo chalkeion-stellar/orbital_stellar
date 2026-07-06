@@ -23,6 +23,7 @@ export const docSections: DocSection[] = [
       { title: 'Webhooks', href: '/docs/guides/webhooks' },
       { title: 'Real-time Events', href: '/docs/guides/real-time-events' },
       { title: 'Webhook Durability', href: '/docs/guides/webhook-durability' },
+      { title: 'Cursor Persistence', href: '/docs/guides/cursor-persistence' },
       { title: 'ABI Registry & Typed Event Decoding', href: '/docs/guides/abi-registry' },
       { title: 'Migrate from raw EventSource', href: '/docs/guides/migrate-from-eventsource' },
       { title: 'Soroban Event Subscription', href: '/docs/guides/soroban-subscription' },

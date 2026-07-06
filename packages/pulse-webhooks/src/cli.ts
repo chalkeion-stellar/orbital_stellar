@@ -31,18 +31,23 @@ export async function dumpDLQ(store: MemoryDeadLetterStore): Promise<void> {
 }
 
 /**
- * Replay a DLQ entry by id. For now this simply re‑adds the entry to the store
- * (simulating a retry) and prints the entry. In a full implementation this would
- * invoke the webhook delivery pipeline.
+ * Replay a DLQ entry by id: re-delivers it through the store's configured
+ * {@link ReplayHandler} (set via {@link MemoryDeadLetterStore.setReplayHandler}),
+ * which actually re-sends the webhook, and marks the entry `replayedAt` on success.
  */
-export function replayDLQ(store: MemoryDeadLetterStore, id: string): void {
+export async function replayDLQ(store: MemoryDeadLetterStore, id: string): Promise<void> {
   const entry = store.get(id);
   if (!entry) {
     console.error(`DLQ entry with id ${id} not found`);
     process.exitCode = 1;
     return;
   }
-  // Simulate replay by re‑adding the entry (could be replaced with real delivery).
-  store.add(entry.url, entry.event, entry.error, entry.attempts);
-  console.log(JSON.stringify(entry));
+
+  try {
+    await store.replay(id);
+    console.log(JSON.stringify(store.get(id)));
+  } catch (err) {
+    console.error(`Replay failed: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+  }
 }

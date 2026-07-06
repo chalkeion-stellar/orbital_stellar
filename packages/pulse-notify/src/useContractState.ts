@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { ContractEmittedEvent } from "@orbital-stellar/pulse-core";
 import { acquireEventConnection } from "./connectionPool.js";
 
-export type ContractStateOptions<T = unknown> = {
+export type ContractStateOptions = {
   pollIntervalMs?: number;
   autoRefreshOn?: {
     serverUrl: string;
@@ -56,7 +56,7 @@ export function useContractState<T = unknown>(
   rpcUrl: string,
   contractId: string,
   key: string,
-  options?: ContractStateOptions<T>,
+  options?: ContractStateOptions,
 ): ContractStateResult<T> {
   const pollIntervalMs = options?.pollIntervalMs ?? 10_000;
   const autoRefreshOn = options?.autoRefreshOn;

@@ -18,7 +18,7 @@
 | Phase | Theme | Tag | Target gate | Status |
 |---|---|---|---|---|
 | **Phase 0 — Foundation** | Typed SDKs for Stellar classic operations | `v0.1.0` | `pnpm -r typecheck && pnpm test` green; tag pushed; CHANGELOG entry shipped | 🟢 **Released 2026-05-29** |
-| **Phase 1 — Production SDK** | Soroban + cursor persistence + stability pledge | `v1.0.0` | `pnpm publish -r --filter "./packages/*"` succeeds; STABILITY.md merged; Soroban e2e test green | ⚪ Q2–Q3 2026 |
+| **Phase 1 — Production SDK** | Soroban + cursor persistence + stability pledge | `v1.0.0` | `pnpm publish -r --filter "./packages/*"` succeeds; STABILITY.md merged; Soroban e2e test green | 🟡 **In progress** — Soroban subscription, ABI registry client, and cursor/retry persistence shipped; stability pledge + SEP draft outstanding |
 | **Phase 2 — SDK Ecosystem** | `@orbital-stellar/hooks`, `@orbital-stellar/payments`, `@orbital-stellar/auth`, first SEP | `v2.0.0` | First SEP submission accepted or under review by SDF; `useBalance` + `useTransaction` on npm | ⚪ 2027 |
 | **Phase 3 — Trust & Agent Layer** | x402, agent-sdk, intent compiler, shadow-fork | `v3.0.0` | x402 reference deployed; intent compiler OSS; ≥1,000 agent integrations | ⚪ 2028+ |
 | **Phase 4 — Protocol Permanence** | Identity layer, reactor library, 10+ SEPs | n/a | 10 SEPs authored or co-authored; Orbital identity in `@orbital-stellar/auth` ≥80% of major Stellar apps | ⚪ long-term |
@@ -70,32 +70,32 @@
 
 ---
 
-## Phase 1 — Production-grade SDK (`v1.0.0`, Q2–Q3 2026)
+## Phase 1 — Production-grade SDK (`v1.0.0`, in progress)
 
 **Goal:** a stability-pledged `v1.0` that teams can build production systems on.
 
-**Release gate:** `pnpm publish -r --filter "./packages/*"` succeeds against npm with `version: "1.0.0"`; [`STABILITY.md`](./STABILITY.md) merged with documented semver contract; Soroban subscription e2e test passing against testnet RPC; M1–M6 in [`docs/proposal.md`](./docs/proposal.md) all check out.
+**Release gate:** `pnpm publish -r --filter "./packages/*"` succeeds against npm with `version: "1.0.0"`; `STABILITY.md` merged with documented semver contract; Soroban subscription e2e test passing against testnet RPC; M1–M6 in [`docs/proposal.md`](./docs/proposal.md) all check out. Waves 1.1–1.3 below have shipped; the gate itself remains open pending the stability pledge (Wave 1.5).
 
 ### Wave 1.1 — Soroban event subscription
 
-- [ ] Stellar RPC subscriber feeding the same normalization pipeline
-- [ ] `contract.invoked` and `contract.emitted` normalized event types
-- [ ] `engine.subscribeContract({ contractId, topics })` API
-- [ ] Topic filter and contract ID filter
+- [x] Stellar RPC subscriber feeding the same normalization pipeline
+- [x] `contract.invoked` and `contract.emitted` normalized event types
+- [x] `engine.subscribeContract({ contractId, topics })` API
+- [x] Topic filter and contract ID filter
 
 ### Wave 1.2 — ABI Registry
 
-- [ ] `@orbital-stellar/abi-registry` client package (TBD final naming)
+- [x] `@orbital-stellar/abi-registry` client package
 - [ ] Schema spec published as a draft SEP
 - [ ] Hosted registry service (operated; client is MIT — see [`docs/open-source-policy.md`](./docs/open-source-policy.md))
-- [ ] `decodedData` field on `contract.emitted` for registered contracts
+- [x] `decodedData` field on `contract.emitted` for registered contracts
 
 ### Wave 1.3 — Cursor persistence and replay primitives
 
-- [ ] `CursorStore` interface on `EventEngine` config
-- [ ] In-memory and on-disk reference adapters
-- [ ] `RetryQueue` interface on `WebhookDelivery`
-- [ ] In-memory reference adapter for retry queue
+- [x] `CursorStore` interface on `EventEngine` config
+- [x] Reference adapters — memory, file, Postgres, Redis, S3
+- [x] `RetryQueue` interface on `WebhookDelivery`
+- [x] Reference adapters — memory, Redis, SQS
 
 ### Wave 1.4 — Discriminated union refinement
 
@@ -105,8 +105,8 @@
 ### Wave 1.5 — Distribution
 
 - [ ] Starter boilerplates: `orbital-next-starter`, `orbital-express-starter`, `orbital-anchor-starter`
-- [ ] `pnpm add @orbital-stellar/pulse-core` works against npm
-- [ ] [`STABILITY.md`](./STABILITY.md) — semver contract, deprecation window (6 months), breaking-change policy
+- [x] `pnpm add @orbital-stellar/pulse-core` works against npm
+- [ ] `STABILITY.md` — semver contract, deprecation window (6 months), breaking-change policy
 - [ ] `v1.0.0` git tag with full release notes
 
 ---

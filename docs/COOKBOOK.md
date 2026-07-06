@@ -5,8 +5,8 @@
 > deployment, hardening) see the guides at
 > [`apps/web/content/guides/`](../apps/web/content/guides/).
 >
-> **Legend.** ✅ ships in `v0.1.0` and runs against testnet/mainnet today.
-> 🛠️ ships in Phase 1 (`v1.0`, Q2–Q3 2026).
+> **Legend.** ✅ ships today and runs against testnet/mainnet.
+> 🛠️ planned, tracked in [`ROADMAP.md`](../ROADMAP.md).
 
 ---
 
@@ -23,7 +23,7 @@
 9. [Route `webhook.failed` to a dead-letter queue](#9-route-webhookfailed-to-a-dead-letter-queue)
 10. [Render live payments in React with type narrowing](#10-render-live-payments-in-react-with-type-narrowing)
 11. [Stand up an SSE endpoint in Next.js](#11-stand-up-an-sse-endpoint-in-nextjs)
-12. [Subscribe to Soroban contract events 🛠️](#12-subscribe-to-soroban-contract-events-)
+12. [Subscribe to Soroban contract events](#12-subscribe-to-soroban-contract-events)
 13. [Unit test webhooks with deterministic jitter](#13-unit-test-webhooks-with-deterministic-jitter)
 
 ---
@@ -405,12 +405,11 @@ The `globalThis` trick keeps one `EventEngine` alive across Next.js HMR. In prod
 
 ---
 
-## 12. Subscribe to Soroban contract events 🛠️
+## 12. Subscribe to Soroban contract events
 
-Phase 1, lands in `v1.0`. Subscribes to smart-contract events by contract ID and topic filter via Stellar RPC. Same normalized-event taxonomy as classic operations, with two new types: `contract.invoked` and `contract.emitted`.
+Subscribes to smart-contract events by contract ID and topic filter via Stellar RPC. Same normalized-event taxonomy as classic operations, with two new types: `contract.invoked` and `contract.emitted`.
 
 ```ts
-// 🛠️ Planned API — Phase 1 (Q2–Q3 2026)
 import { EventEngine } from "@orbital-stellar/pulse-core";
 
 const engine = new EventEngine({
@@ -431,7 +430,7 @@ watcher.on("contract.emitted", (event) => {
 });
 ```
 
-Decoding to typed `decodedData` requires the ABI Registry client (also Phase 1). Until then, raw XDR is exposed in `event.raw`. Track Phase 1 progress in [`ROADMAP.md`](../ROADMAP.md).
+Decoding to typed `decodedData` requires the ABI Registry client (`@orbital-stellar/abi-registry`), wired in via `EventEngine`'s ABI registry config — see [`packages/abi-registry/README.md`](../packages/abi-registry/README.md). Without a registered ABI, raw XDR is exposed in `event.raw`.
 
 ---
 

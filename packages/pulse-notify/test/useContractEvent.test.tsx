@@ -1,4 +1,3 @@
-import { StrictMode, useState } from "react";
 import { render, act, cleanup } from "@testing-library/react";
 import { afterEach, expect, test, describe } from "vitest";
 import {

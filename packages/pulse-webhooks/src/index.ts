@@ -5,7 +5,7 @@ import type {
   WatcherNotification,
 } from "@orbital-stellar/pulse-core";
 
-import { createHmac, timingSafeEqual, randomUUID } from "crypto";
+import { timingSafeEqual, randomUUID } from "crypto";
 import { lookup } from "dns/promises";
 import { BlockList, isIP } from "net";
 
@@ -14,6 +14,7 @@ import { MemoryDeadLetterStore } from "./MemoryDeadLetterStore.js";
 import { exponentialJittered } from "./backoff.js";
 import type { BackoffStrategy } from "./backoff.js";
 import type { RetryQueue, RetryRecord } from "./RetryQueue.js";
+import { signWebhookPayload } from "./signing.js";
 import type { Tracer, UrlEntry, VerifyWebhookOptions, WebhookConfig } from "./types.js";
 import { DEFAULT_MAX_AGE_MS, DEFAULT_CLOCK_SKEW_MS } from "./types.js";
 import { NOOP_WEBHOOK_METRICS } from "./metrics.js";
@@ -34,6 +35,7 @@ BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:c0a8:0", 112, "ipv6");
 BLOCKED_WEBHOOK_ADDRESSES.addSubnet("::ffff:a9fe:0", 112, "ipv6");
 
 const BLOCKED_ADDRESS_ERROR = "Webhook URL points to a blocked private address";
+export { signWebhookPayload } from "./signing.js";
 export { configureDeadLetterStore } from "./DeadLetterStore.js";
 export type {
   DeadLetterEntry,
@@ -717,9 +719,7 @@ export class WebhookDelivery {
   }
 
   private sign(payload: string, timestamp: string): string {
-    const signedPayload = `${timestamp}.${payload}`;
-
-    return createHmac("sha256", this.config.secret).update(signedPayload).digest("hex");
+    return signWebhookPayload(payload, timestamp, this.config.secret);
   }
 }
 
@@ -795,7 +795,7 @@ export function verifyWebhookRaw(
   if (timestampMs > nowMs + clockSkewMs) return false;
   if (timestampMs < nowMs - maxAgeMs - clockSkewMs) return false;
 
-  const expected = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
+  const expected = signWebhookPayload(payload, timestamp, secret);
 
   const expectedBuffer = Buffer.from(expected, "hex");
   const signatureBuffer = Buffer.from(signature, "hex");

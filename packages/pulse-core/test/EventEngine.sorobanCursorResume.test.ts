@@ -1,37 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { EventEngine } from "../src/EventEngine.js";
 import type { CursorStoreLike } from "../src/CursorStore.js";
-import type { SorobanRpc } from "../src/SorobanSubscriber.js";
-
-/**
- * Mock Soroban RPC that returns a single contract.emitted event on the first call.
- */
-function createMockSorobanRpc(): SorobanRpc {
-  let callCount = 0;
-  return {
-    async getEvents(startCursor?: string, limit?: number) {
-      callCount++;
-      if (callCount === 1) {
-        return {
-          events: [
-            {
-              id: "1-0",
-              pagingToken: "cursor-1",
-              type: "contract",
-              topic: ["transfer"],
-              value: { amount: "100" },
-              contractId: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
-              inSuccessfulContractCall: true,
-            } as any,
-          ],
-          latestLedger: 1000,
-          cursor: "cursor-1",
-        };
-      }
-      return { events: [], latestLedger: 1000, cursor: startCursor };
-    },
-  };
-}
 
 describe("EventEngine Soroban cursor resume", () => {
   it("uses horizon:${network} and soroban:${network} cursor keys by default", async () => {
@@ -93,14 +62,14 @@ describe("EventEngine Soroban cursor resume", () => {
   it("tolerates cursorStore failures and continues event delivery", async () => {
     let failCount = 0;
     const cursorStore: CursorStoreLike = {
-      get: vi.fn(async (key: string) => {
+      get: vi.fn(async () => {
         failCount++;
         if (failCount <= 2) {
           throw new Error("store unavailable");
         }
         return null;
       }),
-      set: vi.fn(async (key: string, cursor: string) => {
+      set: vi.fn(async () => {
         throw new Error("store unavailable");
       }),
     };
@@ -133,10 +102,8 @@ describe("EventEngine Soroban cursor resume", () => {
   });
 
   it("calls handleCursorFailure with the appropriate key context", async () => {
-    let callCount = 0;
     const cursorStore: CursorStoreLike = {
-      get: vi.fn(async (key: string) => {
-        callCount++;
+      get: vi.fn(async () => {
         // Fail on first call (before threshold, should not emit unhealthy)
         throw new Error("temporarily unavailable");
       }),

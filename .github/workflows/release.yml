@@ -28,7 +28,6 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-          # registry-url is needed when the npm publish step is uncommented
           registry-url: https://registry.npmjs.org
 
       # ── Build and test gate ───────────────────────────────────────────────
@@ -41,8 +40,8 @@ jobs:
       - name: Build pulse-core
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
 
-      - name: Typecheck pulse-webhooks
-        run: pnpm tsc --noEmit -p packages/pulse-webhooks/tsconfig.json
+      - name: Build pulse-webhooks
+        run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
 
       - name: Typecheck pulse-notify
         run: pnpm tsc --noEmit -p packages/pulse-notify/tsconfig.json
@@ -64,10 +63,9 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
 
       # ── npm publish ───────────────────────────────────────────────────────
-      # Uncomment when packages are ready to publish.
-      # Requires NPM_TOKEN to be added to GitHub secrets first.
-      #
-      # - name: Publish packages to npm
-      #   run: pnpm -r --filter './packages/*' publish --access public --no-git-checks
-      #   env:
-      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Packages are already live on npm under the @orbital-stellar scope;
+      # this step publishes each subsequent tagged version bump.
+      - name: Publish packages to npm
+        run: pnpm -r --filter './packages/*' publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

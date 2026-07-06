@@ -119,5 +119,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build pulse-core
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
+      - name: Build pulse-webhooks
+        run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
       - name: Typecheck apps/web
         run: pnpm tsc --noEmit -p apps/web/tsconfig.json

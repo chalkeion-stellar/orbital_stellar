@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { render, act } from "@testing-library/react";
 import { afterEach, expect, test, describe } from "vitest";
 import { useStellarPayment } from "../src/index.ts";

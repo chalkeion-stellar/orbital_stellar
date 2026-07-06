@@ -1,4 +1,5 @@
-import { createHmac, randomBytes } from "crypto";
+import { randomBytes } from "crypto";
+import { signWebhookPayload } from "@orbital-stellar/pulse-webhooks";
 import { checkWebhookCooldown, clientIp } from "@/lib/demo-limits";
 
 export const dynamic = "force-dynamic";
@@ -52,9 +53,7 @@ export async function POST(req: Request) {
   const event = generateSamplePayment(address);
   const payload = JSON.stringify(event);
   const timestamp = Date.now().toString();
-  const signature = createHmac("sha256", secret)
-    .update(`${timestamp}.${payload}`)
-    .digest("hex");
+  const signature = signWebhookPayload(payload, timestamp, secret);
 
   return Response.json({
     event,

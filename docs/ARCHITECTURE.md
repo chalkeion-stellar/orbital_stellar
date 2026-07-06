@@ -20,7 +20,7 @@
 7. [React hook internals](#7-react-hook-internals)
 8. [Trust boundaries and invariants](#8-trust-boundaries-and-invariants)
 9. [Reference composition (`apps/web`)](#9-reference-composition-appsweb)
-10. [Phase 1 evolution](#10-phase-1-evolution)
+10. [Shipped since Phase 0, and what's still ahead](#10-shipped-since-phase-0-and-whats-still-ahead)
 11. [File map](#11-file-map)
 
 ---
@@ -29,10 +29,10 @@
 
 Orbital is three planes sharing one vocabulary — the **normalized event**:
 
-- **Subscription plane** — `@orbital-stellar/pulse-core` opens and maintains a
-  connection to Stellar (Horizon today, Stellar RPC + Soroban in Phase 1),
-  normalizes raw operations into a typed `NormalizedEvent` union, and routes
-  each event to per-address `Watcher` subscribers.
+- **Subscription plane** — `@orbital-stellar/pulse-core` opens and maintains
+  connections to Stellar (Horizon SSE and Stellar RPC for Soroban contract
+  events), normalizes raw operations into a typed `NormalizedEvent` union, and
+  routes each event to per-address `Watcher` subscribers.
 - **Delivery plane** — `@orbital-stellar/pulse-webhooks` attaches to a `Watcher`,
   signs each event with HMAC-SHA256, and POSTs it to one or more HTTPS
   endpoints with retry, timeout, and SSRF safety. A second export
@@ -46,13 +46,14 @@ Orbital is three planes sharing one vocabulary — the **normalized event**:
 flowchart LR
   subgraph Stellar["Stellar network"]
     Horizon["Horizon REST + SSE"]
-    RPC["Stellar RPC<br/>Soroban — 🛠️ Phase 1"]
+    RPC["Stellar RPC<br/>Soroban events"]
   end
 
   subgraph Subscribe["Subscription plane<br/>@orbital-stellar/pulse-core"]
     Engine["EventEngine"]
-    Normalize["Normalize<br/>13 op types → 21 events"]
+    Normalize["Normalize<br/>13 op types → 21 events<br/>+ contract.invoked/emitted"]
     Watcher["Watcher<br/>per-address pub/sub"]
+    Cursor["CursorStore<br/>memory · file · Postgres · Redis · S3"]
   end
 
   subgraph Deliver["Delivery plane<br/>@orbital-stellar/pulse-webhooks"]
@@ -61,11 +62,12 @@ flowchart LR
   end
 
   subgraph Consume["Consumption plane<br/>@orbital-stellar/pulse-notify"]
-    Hooks["useStellarEvent<br/>useStellarPayment<br/>useStellarActivity"]
+    Hooks["useStellarEvent<br/>useContractEvent<br/>useStellarPayment<br/>useStellarActivity"]
   end
 
   Horizon --> Engine
-  RPC -.-> Engine
+  RPC --> Engine
+  Engine --> Cursor
   Engine --> Normalize --> Watcher
   Watcher --> Sign --> YourEndpoint["Your HTTPS endpoint"]
   YourEndpoint --> Verify
@@ -73,8 +75,8 @@ flowchart LR
   SSE --> Hooks --> ReactApp["React app"]
 ```
 
-Each plane is independently installable from npm (Phase 1 publish) and
-independently composable. The reference composition that powers the marketing
+Each plane is independently installable from npm and independently
+composable. The reference composition that powers the marketing
 demo at `apps/web/app/api/events/[address]/route.ts` shows all three wired
 together inside a single Next.js route handler — about 50 lines of glue.
 
@@ -94,9 +96,9 @@ together inside a single Next.js route handler — about 50 lines of glue.
 | **`useStellarEvent<T>`** | React hook that opens an `EventSource`, parses incoming SSE messages, optionally filters by event type, and re-renders on each event. Stable dep-array via sorted `eventKey`. | `packages/pulse-notify/src/index.ts` | ✅ |
 | **`useStellarPayment` / `useStellarActivity`** | Convenience wrappers over `useStellarEvent`. | `packages/pulse-notify/src/index.ts` | ✅ |
 | **Reference composition** | A Next.js Node-runtime route handler that subscribes to an address and streams events as SSE; plus a `webhook-sample` route that returns an HMAC-signed payload for the demo. | `apps/web/app/api/events/[address]/route.ts`, `apps/web/app/api/webhook-sample/route.ts` | ✅ |
-| **Soroban subscriber** | Subscribes to Stellar RPC for contract events, decodes via the ABI Registry, normalizes into the same `NormalizedEvent` union. | `packages/pulse-core` (planned) | 🛠️ Phase 1 |
-| **Cursor persistence** | Pluggable durable store for the Horizon cursor so a process restart resumes from where it left off. | `packages/pulse-core` (planned) | 🛠️ Phase 1 |
-| **Replay adapters** | Pluggable durable queues (Redis / Postgres / S3) for in-flight webhook retries. | `packages/pulse-webhooks` (planned) | 🛠️ Phase 1 |
+| **Soroban subscriber** | Subscribes to Stellar RPC for contract events, decodes via the ABI Registry, normalizes into the same `NormalizedEvent` union. | `packages/pulse-core/src/SorobanSubscriber.ts`, `SorobanRpcClient.ts` | ✅ |
+| **Cursor persistence** | Pluggable durable store (`CursorStore`) for the Horizon/Soroban cursor so a process restart resumes from where it left off. Memory, file, Postgres, Redis, and S3 adapters. | `packages/pulse-core/src/CursorStore.ts` + adapters | ✅ |
+| **Replay / retry adapters** | Pluggable durable queues (`RetryQueue`) for in-flight webhook retries. Memory, Redis, and SQS adapters. | `packages/pulse-webhooks/src/RetryQueue.ts` + adapters | ✅ |
 
 ---
 
@@ -380,33 +382,39 @@ proper process manager. The whole composition is under 200 lines of TS.
 
 ---
 
-## 10. Phase 1 evolution
+## 10. Shipped since Phase 0, and what's still ahead
 
-Where Phase 1 (`v1.0`, Q2–Q3 2026) bolts on without changing the public
-API:
+The following bolted on without changing the public API surface consumers
+already depend on:
 
 - **Soroban event subscription.** A second source feeding into the same
   normalization pipeline. New event types
   (`contract.invoked`, `contract.emitted`) join the `NormalizedEvent` union;
-  existing consumers ignore them unless they subscribe.
+  existing consumers ignore them unless they call
+  `engine.subscribeContract({ contractId, topics })`.
 - **ABI Registry client.** Decodes Soroban event topics + data into typed,
-  human-readable JSON. Lives in the separate `@orbital-stellar/abi-registry`
-  package so the registry data layer is independently versioned.
+  human-readable JSON via `decodedData` on `contract.emitted`. Lives in the
+  separate `@orbital-stellar/abi-registry` package so the registry data layer
+  is independently versioned.
 - **Cursor persistence.** A pluggable `CursorStore` interface stored on
-  `EventEngine` config. Implementations: in-memory (default, current
-  behavior), local file, Redis, Postgres, S3. On reconnect, the engine
+  `EventEngine` config. Implementations: in-memory (default), local file,
+  Redis, Postgres, S3. On reconnect with a configured store, the engine
   resumes from the stored cursor instead of `"now"`.
 - **Replay adapters.** A pluggable `RetryQueue` interface on
-  `WebhookDelivery`. Implementations: in-memory (current), Redis, Postgres,
-  SQS. Pending retries survive process restarts.
+  `WebhookDelivery`. Implementations: in-memory (default), Redis, SQS.
+  Pending retries survive process restarts when configured.
+
+Consumers opt in by passing new config (`cursorStore`, `retryQueue`,
+`soroban`) — existing `on()` handlers are unaffected.
+
+Still ahead (tracked in [`ROADMAP.md`](../ROADMAP.md) Wave 1.4–1.5):
+
 - **Discriminated union refinement.** Today the `NormalizedEvent` union is
   discriminated by `type` but several fields are `unknown` for type-safety
-  reasons (the raw Horizon record). Phase 1 narrows these to typed shapes
-  with the help of generated schemas from Horizon's OpenAPI.
-
-The upgrade path for existing consumers is: `pnpm update` to `v1.x`,
-optionally pass new config (`cursorStore`, `retryQueue`), keep their
-existing `on()` handlers unchanged.
+  reasons (the raw Horizon record). A future pass narrows these to typed
+  shapes with the help of generated schemas from Horizon's OpenAPI.
+- **`STABILITY.md`** — a formal semver contract and deprecation window,
+  the last gate before a `v1.0.0` tag.
 
 ---
 
@@ -416,21 +424,34 @@ existing `on()` handlers unchanged.
 orbital_stellar/
 ├── packages/                      # Published SDKs (MIT, npm)
 │   ├── pulse-core/
-│   │   ├── src/
-│   │   │   ├── EventEngine.ts     # ~1100 lines — engine + normalizers + routing
+│   │   ├── src/                   # 27 files — engine, normalizers, routing,
+│   │   │   │                      # Soroban subscriber/RPC client, 5 cursor-store
+│   │   │   │                      # adapters, backoff, address/amount helpers
+│   │   │   ├── EventEngine.ts     # ~2300 lines — engine + normalizers + routing
+│   │   │   ├── SorobanSubscriber.ts   # Soroban RPC polling + reconnect
+│   │   │   ├── SorobanRpcClient.ts    # Stellar RPC getEvents client
+│   │   │   ├── CursorStore.ts + {Memory,File,Postgres,Redis,S3}CursorStore.ts
 │   │   │   ├── Watcher.ts         # EventEmitter wrapper with stop-handler hooks
 │   │   │   ├── errors.ts          # EngineAlreadyStartedError
 │   │   │   └── index.ts           # Public types + barrel exports
-│   │   ├── test/                  # Vitest suites (103 passing)
-│   │   └── bench/throughput.ts    # tsx benchmark harness
+│   │   ├── test/                  # Vitest suites (500+ passing across 50 files)
+│   │   └── bench/                 # tsx benchmark harnesses (throughput, Soroban)
 │   ├── pulse-webhooks/
 │   │   ├── src/
 │   │   │   ├── index.ts           # WebhookDelivery + verifyWebhook (Node)
 │   │   │   ├── edge.ts            # verifyWebhookEdge (Web Crypto)
+│   │   │   ├── signing.ts         # Shared HMAC signing helper
+│   │   │   ├── RetryQueue.ts + {Memory,Redis,Sqs}RetryQueue.ts
+│   │   │   ├── cli.ts, bin/orbital    # `orbital dlq` CLI (list/dump/replay)
 │   │   │   └── types.ts           # WebhookConfig
-│   │   └── test/                  # Vitest suites (13 passing)
-│   └── pulse-notify/
-│       └── src/index.ts           # ~120 lines — three React hooks
+│   │   └── test/                  # Vitest suites (180+ passing)
+│   ├── pulse-notify/
+│   │   └── src/index.ts + hooks   # useStellarEvent, useContractEvent,
+│   │                               # useStellarPayment, useStellarActivity,
+│   │                               # useStellarAddresses, useStellarHistory
+│   └── abi-registry/
+│       └── src/                   # AbiRegistryClient, LocalAbiRegistryClient,
+│                                   # scval/JS conversion, schema validation
 ├── apps/
 │   └── web/                       # Marketing site + reference composition
 │       ├── app/
@@ -447,7 +468,7 @@ orbital_stellar/
 │           └── demo-limits.ts     # Per-IP + per-session caps
 ├── docs/                          # Strategic + reference docs (this dir)
 ├── .github/workflows/             # CI, CodeQL, security, integration, release
-├── PROGRESS.md                    # Phase 0 status snapshot
+├── PROGRESS.md                    # Status snapshot
 ├── ROADMAP.md                     # Multi-year phase plan
 ├── CHANGELOG.md                   # Rolled-up release notes
 └── CONTRIBUTING.md                # Dev loop + PR conventions
@@ -457,11 +478,12 @@ orbital_stellar/
 
 ## Related documents
 
-- [`PROGRESS.md`](../PROGRESS.md) — Phase 0 completion checklist
+- [`PROGRESS.md`](../PROGRESS.md) — Status snapshot and completion checklist
 - [`ROADMAP.md`](../ROADMAP.md) — Phase 0 → Phase 4 timeline
 - [`CHANGELOG.md`](../CHANGELOG.md) — Per-release notes
 - [`docs/proposal.md`](./proposal.md) — SCF grant proposal
 - Per-package READMEs:
   [`pulse-core`](../packages/pulse-core/README.md),
   [`pulse-webhooks`](../packages/pulse-webhooks/README.md),
-  [`pulse-notify`](../packages/pulse-notify/README.md)
+  [`pulse-notify`](../packages/pulse-notify/README.md),
+  [`abi-registry`](../packages/abi-registry/README.md)

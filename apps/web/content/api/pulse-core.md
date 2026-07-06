@@ -104,7 +104,7 @@ Every event delivered to a `Watcher` is a member of the `NormalizedEvent` discri
 | `data.set` | A `manage_data` operation set or updated a data entry |
 | `data.cleared` | A `manage_data` operation removed a data entry |
 
-Soroban contract events (`contract.event`, etc.) are coming in Phase 1 — see the [roadmap](https://github.com/orbital/orbital/blob/main/ROADMAP.md).
+Soroban contract events (`contract.invoked`, `contract.emitted`) are also supported — see the [Soroban Event Subscription guide](/docs/guides/soroban-subscription).
 
 ## Engine notifications
 

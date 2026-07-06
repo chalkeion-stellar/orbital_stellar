@@ -50,7 +50,7 @@ function createTokenSpec(): ContractSpec {
 describe("generateContractArtifacts", () => {
   it("generates typed interfaces and matching zod schemas for token events", () => {
     const spec = createTokenSpec();
-    const artifacts = generateContractArtifacts(spec, "token");
+    const artifacts = generateContractArtifacts(spec);
 
     expect(artifacts.declarations).toContain("export interface Transfer");
     expect(artifacts.declarations).toContain("from: string;");
@@ -79,7 +79,7 @@ describe("generateContractArtifacts", () => {
       ],
     } satisfies ContractSpec;
 
-    const artifacts = generateContractArtifacts(spec, "token");
+    const artifacts = generateContractArtifacts(spec);
 
     expect(artifacts.declarations).toContain("export interface TransferEvent");
     expect(artifacts.declarations).toContain("export interface TransferEvent2");
