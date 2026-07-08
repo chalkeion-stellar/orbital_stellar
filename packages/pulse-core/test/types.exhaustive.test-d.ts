@@ -1,6 +1,11 @@
 import type { NormalizedEvent } from "../src/index.js";
 import { Watcher } from "../src/Watcher.js";
-import type { PaymentEvent, WatcherNotification, DecodeFailedNotification } from "../src/index.js";
+import type {
+  PaymentEvent,
+  WatcherNotification,
+  DecodeFailedNotification,
+  UnrecognizedOperationTypeNotification,
+} from "../src/index.js";
 
 type Assert<T extends true> = T;
 type Equal<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -168,15 +173,35 @@ export function testWatcherOnInference() {
     const _error = e.error;
   });
 
+  watcher.on("engine.unrecognized_operation_type", (e) => {
+    type _IsUnrecognizedOperationTypeNotification = Assert<
+      Equal<typeof e, UnrecognizedOperationTypeNotification>
+    >;
+    const _operationType = e.operationType;
+    const _record = e.record;
+  });
+
   watcher.on("*", (_e) => {
     type _IsFullUnion = Assert<
-      Equal<typeof _e, NormalizedEvent | WatcherNotification | DecodeFailedNotification>
+      Equal<
+        typeof _e,
+        | NormalizedEvent
+        | WatcherNotification
+        | DecodeFailedNotification
+        | UnrecognizedOperationTypeNotification
+      >
     >;
   });
 
   watcher.on("unknown.event", (_e) => {
     type _IsFullUnion = Assert<
-      Equal<typeof _e, NormalizedEvent | WatcherNotification | DecodeFailedNotification>
+      Equal<
+        typeof _e,
+        | NormalizedEvent
+        | WatcherNotification
+        | DecodeFailedNotification
+        | UnrecognizedOperationTypeNotification
+      >
     >;
   });
 }
