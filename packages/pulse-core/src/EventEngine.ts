@@ -31,6 +31,7 @@ import type {
   LiquidityPoolReserve,
   LiquidityPoolWithdrawEvent,
   Network,
+  NetworkSourceConfig,
   NormalizedEvent,
   OfferEvent,
   OfferEventType,
@@ -219,6 +220,16 @@ export class EventEngine {
   private sorobanNetworkReady?: Promise<SorobanNetworkInfo | undefined>;
   /** Optional ABI registry used to enrich `contract.emitted` events with `decodedData`. */
   private abiRegistry?: AbiRegistryClientLike;
+  /**
+   * Present only when constructed with `CoreConfig.network` as an array.
+   * Each value is a fully independent single-network `EventEngine` (own
+   * Horizon stream, own Soroban subscriber, own reconnect/cursor state).
+   * Every public method branches to a sub-engine fan-out at its top when
+   * this is set, before touching any of the single-network-only fields
+   * above (`server`, `reconnectConfig`, `network`, `streamKey`), which are
+   * left with harmless placeholder values in this mode.
+   */
+  private networkSources?: Map<Network, EventEngine>;
 
   /**
    * Creates a new EventEngine instance.
@@ -226,6 +237,21 @@ export class EventEngine {
    */
   constructor(config: CoreConfig) {
     this.sorobanPageLimit = resolveSorobanPageLimit(config.soroban?.pageLimit);
+
+    if (Array.isArray(config.network)) {
+      this.networkSources = this.buildNetworkSources(config.network, config);
+
+      // Placeholders for fields with no meaning at the orchestrator level —
+      // never read, since every public method fans out to networkSources
+      // before reaching the single-network logic that reads them.
+      this.server = null as unknown as Horizon.Server;
+      this.reconnectConfig = { ...DEFAULT_RECONNECT };
+      this.log = config.logger ?? noop;
+      this.streamKey = "";
+      this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
+      this.network = null as unknown as Network;
+      return;
+    }
 
     let horizonUrl: string;
     if (config.horizonUrl !== undefined) {
@@ -306,6 +332,67 @@ export class EventEngine {
         onEvent: async (event) => this.handleSorobanEvent(event),
       });
     }
+  }
+
+  /**
+   * Builds one independent single-network `EventEngine` per configured
+   * source. Every public method checks `networkSources` first and fans out
+   * to these sub-engines instead of using the single-network-only fields.
+   */
+  private buildNetworkSources(
+    sources: NetworkSourceConfig[],
+    config: CoreConfig,
+  ): Map<Network, EventEngine> {
+    if (sources.length === 0) {
+      throw new Error("CoreConfig.network: at least one network source is required.");
+    }
+
+    const seen = new Set<Network>();
+    for (const source of sources) {
+      if (seen.has(source.network)) {
+        throw new Error(
+          `CoreConfig.network: duplicate network source "${source.network}". Each network may appear at most once.`,
+        );
+      }
+      seen.add(source.network);
+    }
+
+    const networkSources = new Map<Network, EventEngine>();
+    for (const source of sources) {
+      const subEngine = new EventEngine({
+        network: source.network,
+        horizonUrl: source.horizonUrl,
+        soroban: source.soroban,
+        reconnect: config.reconnect,
+        logger: config.logger,
+        cursorStore: config.cursorStore,
+        cursorFailureThreshold: config.cursorFailureThreshold,
+        abiRegistry: config.abiRegistry,
+        streamKey: config.streamKey ? `${config.streamKey}:${source.network}` : undefined,
+      });
+      networkSources.set(source.network, subEngine);
+    }
+    return networkSources;
+  }
+
+  /**
+   * Forwards every event/notification from a sub-engine's watcher to the
+   * parent composite watcher, tagging it with the originating `network`.
+   * Filtering (if any) already happened inside the sub-engine, since
+   * `options`/`config` are passed through to it unchanged.
+   */
+  private forwardMultiNetworkEvents(
+    subWatcher: Watcher,
+    parentWatcher: Watcher,
+    network: Network,
+  ): void {
+    subWatcher.on("*", (event) => {
+      if (parentWatcher.stopped) return;
+      const type = (event as { type: string }).type;
+      const tagged = { ...(event as Record<string, unknown>), network };
+      parentWatcher.emit(type, tagged);
+      parentWatcher.emit("*", tagged);
+    });
   }
 
   /**
@@ -427,6 +514,25 @@ export class EventEngine {
     if (options?.name !== undefined) {
       this.subscriptionNames.set(address, options.name);
     }
+
+    if (this.networkSources) {
+      // Filtering (if any) happens inside each sub-engine, since `options`
+      // (including `options.filter`) is passed through unchanged.
+      const subWatchers: Watcher[] = [];
+      for (const [network, subEngine] of this.networkSources) {
+        const subWatcher = subEngine.subscribe(address, options);
+        subWatchers.push(subWatcher);
+        this.forwardMultiNetworkEvents(subWatcher, watcher, network);
+      }
+      watcher.addStopHandler(() => {
+        this.registry.delete(address);
+        this.subscriptionNames.delete(address);
+        for (const subWatcher of subWatchers) subWatcher.stop();
+      });
+      this.registry.set(address, watcher);
+      return watcher;
+    }
+
     if (options?.filter) {
       this.filters.set(address, options.filter);
     }
@@ -494,6 +600,22 @@ export class EventEngine {
       if (existing) return existing;
 
       const watcher = new Watcher(key);
+
+      if (this.networkSources) {
+        const subWatchers: Watcher[] = [];
+        for (const [network, subEngine] of this.networkSources) {
+          const subWatcher = subEngine.subscribeContract(config);
+          subWatchers.push(subWatcher);
+          this.forwardMultiNetworkEvents(subWatcher, watcher, network);
+        }
+        watcher.addStopHandler(() => {
+          this.contractConfigRegistry.delete(key);
+          for (const subWatcher of subWatchers) subWatcher.stop();
+        });
+        this.contractConfigRegistry.set(key, watcher);
+        return watcher;
+      }
+
       watcher.addStopHandler(() => this.contractConfigRegistry.delete(key));
       this.contractConfigRegistry.set(key, watcher);
       return watcher;
@@ -517,6 +639,23 @@ export class EventEngine {
     if (options?.name !== undefined) {
       this.subscriptionNames.set(id, options.name);
     }
+
+    if (this.networkSources) {
+      const subWatchers: Watcher[] = [];
+      for (const [network, subEngine] of this.networkSources) {
+        const subWatcher = subEngine.subscribeContract(id, options);
+        subWatchers.push(subWatcher);
+        this.forwardMultiNetworkEvents(subWatcher, watcher, network);
+      }
+      watcher.addStopHandler(() => {
+        this.contractRegistry.delete(id);
+        this.subscriptionNames.delete(id);
+        for (const subWatcher of subWatchers) subWatcher.stop();
+      });
+      this.contractRegistry.set(id, { watcher, filters });
+      return watcher;
+    }
+
     if (options?.filter) {
       this.filters.set(id, options.filter);
     }
@@ -645,6 +784,14 @@ export class EventEngine {
    * Pass `{ strict: true }` to throw EngineAlreadyStartedError instead of returning false.
    */
   start(options?: { strict?: boolean }): boolean {
+    if (this.networkSources) {
+      let allStarted = true;
+      for (const subEngine of this.networkSources.values()) {
+        allStarted = subEngine.start(options) && allStarted;
+      }
+      return allStarted;
+    }
+
     if (this.isRunning || this.reconnectTimer) {
       if (options?.strict) {
         throw new EngineAlreadyStartedError();
@@ -703,6 +850,17 @@ export class EventEngine {
   }
 
   async healthCheck(thresholdMs = 5 * 60 * 1000): Promise<HealthCheckResult> {
+    if (this.networkSources) {
+      const reasons: string[] = [];
+      for (const [network, subEngine] of this.networkSources) {
+        const subResult = await subEngine.healthCheck(thresholdMs);
+        for (const reason of subResult.reasons) {
+          reasons.push(`${network}: ${reason}`);
+        }
+      }
+      return { ok: reasons.length === 0, reasons };
+    }
+
     const reasons: string[] = [];
 
     if (!this.isRunning) {
@@ -752,6 +910,11 @@ export class EventEngine {
    * @param source - The source to pause: "horizon" or "soroban"
    */
   pauseSource(source: "horizon" | "soroban"): void {
+    if (this.networkSources) {
+      for (const subEngine of this.networkSources.values()) subEngine.pauseSource(source);
+      return;
+    }
+
     if (this.pausedSources.has(source)) {
       this.log.warn(`[pulse-core] pauseSource("${source}") called but source is already paused.`, {
         source,
@@ -768,6 +931,11 @@ export class EventEngine {
    * @param source - The source to resume: "horizon" or "soroban"
    */
   resumeSource(source: "horizon" | "soroban"): void {
+    if (this.networkSources) {
+      for (const subEngine of this.networkSources.values()) subEngine.resumeSource(source);
+      return;
+    }
+
     if (!this.pausedSources.has(source)) {
       this.log.warn(`[pulse-core] resumeSource("${source}") called but source is not paused.`, {
         source,
@@ -788,20 +956,29 @@ export class EventEngine {
    * resolves (#636).
    */
   async stop(): Promise<void> {
-    this.stopGeneration++;
-    this.clearReconnectTimer();
-    this.pendingReconnectSuccessAttempt = null;
-    this.reconnectAttempt = 0;
-    this.lastEventAt = null;
-    this.closeStream();
-    this.isRunning = false;
-    this.horizonCursor = undefined;
-    this.pausedSources.clear();
+    if (this.networkSources) {
+      for (const subEngine of this.networkSources.values()) {
+        await subEngine.stop();
+      }
+    } else {
+      this.stopGeneration++;
+      this.clearReconnectTimer();
+      this.pendingReconnectSuccessAttempt = null;
+      this.reconnectAttempt = 0;
+      this.lastEventAt = null;
+      this.closeStream();
+      this.isRunning = false;
+      this.horizonCursor = undefined;
+      this.pausedSources.clear();
 
-    if (this.sorobanSubscriber) {
-      await this.sorobanSubscriber.stop();
+      if (this.sorobanSubscriber) {
+        await this.sorobanSubscriber.stop();
+      }
     }
 
+    // Shared regardless of mode: `this.registry`/`this.contractRegistry` hold
+    // the parent-facing watchers either way (composite ones in multi-network
+    // mode), so notifying and stopping them here is correct in both cases.
     this.notifyWatchers("engine.stopped", {
       type: "engine.stopped",
       attempt: 0,
@@ -819,6 +996,70 @@ export class EventEngine {
    * for both Horizon and Soroban subscribers.
    */
   status(): EngineStatus {
+    if (this.networkSources) {
+      const networks: NonNullable<EngineStatus["networks"]> = {};
+      let running = false;
+      let reconnectAttempt = 0;
+      let horizonRunning = false;
+      let sorobanRunning = false;
+      let horizonReconnectAttempt = 0;
+      const lastEventAt: string[] = [];
+      const horizonLastEventAt: string[] = [];
+      const sorobanLastEventAt: string[] = [];
+      const pausedSources = new Set<"horizon" | "soroban">();
+
+      for (const [network, subEngine] of this.networkSources) {
+        const subStatus = subEngine.status();
+        networks[network] = subStatus.sources;
+
+        running = running || subStatus.running;
+        reconnectAttempt = Math.max(reconnectAttempt, subStatus.reconnectAttempt);
+        if (subStatus.lastEventAt) lastEventAt.push(subStatus.lastEventAt);
+        subStatus.pausedSources?.forEach((source) => pausedSources.add(source));
+
+        horizonRunning = horizonRunning || subStatus.sources.horizon.running;
+        sorobanRunning = sorobanRunning || subStatus.sources.soroban.running;
+        horizonReconnectAttempt = Math.max(
+          horizonReconnectAttempt,
+          subStatus.sources.horizon.reconnectAttempt,
+        );
+        if (subStatus.sources.horizon.lastEventAt) {
+          horizonLastEventAt.push(subStatus.sources.horizon.lastEventAt);
+        }
+        if (subStatus.sources.soroban.lastEventAt) {
+          sorobanLastEventAt.push(subStatus.sources.soroban.lastEventAt);
+        }
+      }
+
+      return {
+        running,
+        watcherCount: this.registry.size,
+        contractWatcherCount: this.contractRegistry.size,
+        lastEventAt: lastEventAt.length
+          ? (lastEventAt.sort()[lastEventAt.length - 1] ?? null)
+          : null,
+        reconnectAttempt,
+        pausedSources: pausedSources.size > 0 ? Array.from(pausedSources) : undefined,
+        sources: {
+          horizon: {
+            running: horizonRunning,
+            lastEventAt: horizonLastEventAt.length
+              ? (horizonLastEventAt.sort()[horizonLastEventAt.length - 1] ?? null)
+              : null,
+            reconnectAttempt: horizonReconnectAttempt,
+          },
+          soroban: {
+            running: sorobanRunning,
+            lastEventAt: sorobanLastEventAt.length
+              ? (sorobanLastEventAt.sort()[sorobanLastEventAt.length - 1] ?? null)
+              : null,
+            reconnectAttempt: 0,
+          },
+        },
+        networks,
+      };
+    }
+
     const horizon = {
       running: this.isRunning,
       lastEventAt: this.lastEventAt,
