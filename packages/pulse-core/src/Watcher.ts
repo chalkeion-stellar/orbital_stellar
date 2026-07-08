@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import type {
   DecodeFailedNotification,
   NormalizedEvent,
+  UnrecognizedOperationTypeNotification,
   WatcherNotification,
   PaymentEvent,
   AccountOptionsEvent,
@@ -20,7 +21,11 @@ import type {
   ContractEmittedEvent,
 } from "./index.js";
 
-type WatcherEvent = NormalizedEvent | WatcherNotification | DecodeFailedNotification;
+type WatcherEvent =
+  | NormalizedEvent
+  | WatcherNotification
+  | DecodeFailedNotification
+  | UnrecognizedOperationTypeNotification;
 
 export type WatcherEventMap = {
   "payment.received": PaymentEvent & { readonly timestampDate: Date };
@@ -53,6 +58,7 @@ export type WatcherEventMap = {
   "engine.cursor_store_unhealthy": WatcherNotification;
   "engine.cursor_expired": WatcherNotification;
   "event.decode_failed": DecodeFailedNotification;
+  "engine.unrecognized_operation_type": UnrecognizedOperationTypeNotification;
   "webhook.failed": NormalizedEvent;
   "webhook.dropped": NormalizedEvent;
   "*": WatcherEvent;

@@ -48,6 +48,7 @@ import type {
   Logger,
   CursorStoreLike,
   DecodeFailedNotification,
+  UnrecognizedOperationTypeNotification,
   RawHorizonPayment,
   RawHorizonSetOptions,
   RawHorizonCreateAccount,
@@ -1266,6 +1267,12 @@ export class EventEngine {
       return this.normalizeContractEmitted(r, record);
     }
 
+    const operationType = typeof r.type === "string" ? r.type : String(r.type);
+    this.log.warn("[pulse-core] normalize() dropping record with unrecognized operation type.", {
+      operationType,
+      record,
+    });
+    this.emitUnrecognizedOperationTypeNotification(operationType, record);
     return null;
   }
 
@@ -1844,6 +1851,22 @@ export class EventEngine {
         watcher.emit(event.type, event);
         watcher.emit("*", event);
       }
+    }
+  }
+
+  private emitUnrecognizedOperationTypeNotification(operationType: string, record: unknown): void {
+    const notification: UnrecognizedOperationTypeNotification = {
+      type: "engine.unrecognized_operation_type",
+      operationType,
+      record,
+    };
+
+    for (const watcher of this.registry.values()) {
+      watcher.emit("engine.unrecognized_operation_type", notification);
+    }
+
+    for (const { watcher } of this.contractRegistry.values()) {
+      watcher.emit("engine.unrecognized_operation_type", notification);
     }
   }
 

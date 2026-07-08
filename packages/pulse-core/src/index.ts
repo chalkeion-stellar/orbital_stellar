@@ -619,6 +619,20 @@ export type DecodeFailedNotification = {
 };
 
 /**
+ * Emitted when `EventEngine` receives a record whose `type` field does not
+ * match any recognized Horizon or Soroban operation type. Distinct from
+ * `DecodeFailedNotification`, which covers ABI-spec lookup failures for
+ * already-recognized `contract_event` records.
+ */
+export type UnrecognizedOperationTypeNotification = {
+  type: "engine.unrecognized_operation_type";
+  /** The unrecognized value of the record's `type` field. */
+  operationType: string;
+  /** The raw record that could not be normalized. */
+  record: unknown;
+};
+
+/**
  * Filter criteria for a contract subscription.
  * All specified fields must match (AND semantics).
  * Omitting a field means "match any".
