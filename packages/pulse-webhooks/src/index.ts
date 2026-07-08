@@ -1,6 +1,7 @@
 import type {
   DecodeFailedNotification,
   NormalizedEvent,
+  UnrecognizedOperationTypeNotification,
   Watcher,
   WatcherNotification,
 } from "@orbital-stellar/pulse-core";
@@ -137,6 +138,23 @@ export type WebhookBackpressureRaw = {
   originalEvent: NormalizedEvent;
 };
 
+// Distributes Omit over a union so each NormalizedEvent variant loses its own
+// `raw` key, instead of collapsing to the intersection of all variants' keys.
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** A `webhook.failed` notification: the source event with `raw` replaced by failure context. */
+export type WebhookFailed = DistributiveOmit<NormalizedEvent, "raw"> & { raw: WebhookFailureRaw };
+/** A `webhook.dropped` notification: the source event with `raw` replaced by drop context. */
+export type WebhookDropped = DistributiveOmit<NormalizedEvent, "raw"> & {
+  raw: WebhookDroppedRaw;
+};
+/** A `webhook.backpressure` notification: the source event with `raw` replaced by backpressure context. */
+export type WebhookBackpressure = DistributiveOmit<NormalizedEvent, "raw"> & {
+  raw: WebhookBackpressureRaw;
+};
+/** Synthetic watcher events emitted by `WebhookDelivery`, passed to {@link Watcher.emit}'s generic superset parameter. */
+export type WebhookWatcherEvent = WebhookFailed | WebhookDropped | WebhookBackpressure;
+
 type ResolvedWebhookConfig = Omit<
   Required<WebhookConfig>,
   "url" | "tracer" | "urlValidator" | "metrics" | "backoff" | "retryQueue"
@@ -231,7 +249,11 @@ export class WebhookDelivery {
   }
 
   private readonly handleWatcherEvent = (
-    event: NormalizedEvent | WatcherNotification | DecodeFailedNotification,
+    event:
+      | NormalizedEvent
+      | WatcherNotification
+      | DecodeFailedNotification
+      | UnrecognizedOperationTypeNotification,
   ): void => {
     if (this.stopped) return;
     if ("raw" in event) {
@@ -561,7 +583,7 @@ export class WebhookDelivery {
     // `webhook.failed` consumers can correlate via `dlqId`.
     void this.recordTerminalFailure(url, event, errorMessage, attempt).then((dlqId) => {
       this.config.metrics?.recordTerminal(url, "failure");
-      this.watcher.emit("webhook.failed", {
+      const failed: WebhookFailed = {
         ...event,
         raw: {
           error: errorMessage,
@@ -570,7 +592,8 @@ export class WebhookDelivery {
           originalEvent: event,
           dlqId,
         } satisfies WebhookFailureRaw,
-      } as unknown as NormalizedEvent);
+      };
+      this.watcher.emit("webhook.failed", failed);
     });
   }
 
@@ -612,7 +635,7 @@ export class WebhookDelivery {
 
   /** Emits `webhook.backpressure` when the delivery cap is exceeded. */
   private emitBackpressure(event: NormalizedEvent, url: string): void {
-    this.watcher.emit("webhook.backpressure", {
+    const backpressure: WebhookBackpressure = {
       ...event,
       raw: {
         reason: "concurrent_delivery_cap_exceeded",
@@ -621,7 +644,8 @@ export class WebhookDelivery {
         pendingCount: this.overflowQueue.length,
         originalEvent: event,
       } satisfies WebhookBackpressureRaw,
-    } as unknown as NormalizedEvent);
+    };
+    this.watcher.emit("webhook.backpressure", backpressure);
   }
 
   private clearRetryTimers(): void {
@@ -639,7 +663,7 @@ export class WebhookDelivery {
   private emitDropped(event: NormalizedEvent, url: string): void {
     this.config.metrics?.recordTerminal(url, "dropped");
     void this.recordTerminalFailure(url, event, "retry_cap_exceeded", 0).then(() => {
-      this.watcher.emit("webhook.dropped", {
+      const dropped: WebhookDropped = {
         ...event,
         raw: {
           reason: "retry_cap_exceeded",
@@ -647,7 +671,8 @@ export class WebhookDelivery {
           maxConcurrentRetries: this.config.maxConcurrentRetries,
           originalEvent: event,
         } satisfies WebhookDroppedRaw,
-      } as unknown as NormalizedEvent);
+      };
+      this.watcher.emit("webhook.dropped", dropped);
     });
   }
 

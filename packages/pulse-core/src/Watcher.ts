@@ -124,11 +124,15 @@ export class Watcher extends EventEmitter {
   /**
    * Emits an event to all registered handlers.
    * If the watcher is stopped, this returns false without emitting.
+   *
+   * The type parameter lets downstream packages (e.g. pulse-webhooks) emit
+   * synthetic event shapes that are structurally a superset of `WatcherEvent`
+   * (same object shape, richer `raw` payload) without an `as unknown` cast.
    * @param eventType - The event type to emit.
    * @param event - The event data.
    * @returns True if the event had listeners, false otherwise.
    */
-  emit(eventType: string, event: WatcherEvent): boolean {
+  emit<E extends WatcherEvent | Record<string, unknown>>(eventType: string, event: E): boolean {
     if (this._stopped) return false;
     return super.emit(eventType, event);
   }
