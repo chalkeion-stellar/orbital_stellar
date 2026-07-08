@@ -106,6 +106,13 @@ export type EngineStatus = {
     horizon: SourceStatus;
     soroban: SourceStatus;
   };
+  /**
+   * Present only when the engine was constructed with an array of network
+   * sources (`CoreConfig.network` as `NetworkSourceConfig[]`); per-network
+   * breakdown of `sources`. `sources` above is an aggregate across all
+   * configured networks for consumers that don't need the per-network detail.
+   */
+  networks?: Partial<Record<Network, { horizon: SourceStatus; soroban: SourceStatus }>>;
 };
 
 /** Passphrase strings for each supported Stellar network. */
@@ -423,6 +430,8 @@ export type NormalizedEvent = (
 ) & {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
+  /** Which network this event came from. Only set when `EventEngine` was constructed with multiple network sources (`CoreConfig.network` as an array). */
+  network?: Network;
 };
 
 /**
@@ -510,23 +519,44 @@ export type SorobanConfig = {
   pageLimit?: number;
 };
 
-export type CoreConfig = {
-  /** The Stellar network to connect to. */
+/**
+ * One network's connection details in a multi-network `CoreConfig.network` array.
+ * Each source becomes an independent, internally-managed single-network
+ * `EventEngine` — same reconnect/cursor/decode behavior as a standalone engine,
+ * just fanned out and merged under one parent engine.
+ */
+export type NetworkSourceConfig = {
+  /** The Stellar network this source connects to. */
   network: Network;
-  /** Optional override for the Horizon server URL. When set, `network` is still used for chain context but the connection is made to this URL. Useful for private nodes, regional mirrors, or futurenet. */
+  /** Optional override for this source's Horizon server URL. See `CoreConfig.horizonUrl`. */
   horizonUrl?: string;
-  /** Optional reconnection configuration. */
+  /** Optional Soroban RPC configuration for this source. Each network typically needs its own `rpcUrl`. */
+  soroban?: SorobanConfig;
+};
+
+export type CoreConfig = {
+  /**
+   * The Stellar network to connect to. Pass an array of `NetworkSourceConfig`
+   * to run Horizon (+ optionally Soroban RPC) against multiple networks from
+   * one engine — e.g. mirroring testnet and mainnet simultaneously. Events
+   * from a multi-network engine carry a `network` field identifying their
+   * source, and `status()` reports a per-network breakdown via `networks`.
+   */
+  network: Network | NetworkSourceConfig[];
+  /** Optional override for the Horizon server URL. When set, `network` is still used for chain context but the connection is made to this URL. Useful for private nodes, regional mirrors, or futurenet. Ignored when `network` is an array — set `horizonUrl` per source instead. */
+  horizonUrl?: string;
+  /** Optional reconnection configuration. Applied to every source when `network` is an array. */
   reconnect?: ReconnectConfig;
   logger?: Logger;
-  /** Optional cursor store for resumable streams. */
+  /** Optional cursor store for resumable streams. Shared across sources when `network` is an array; each source's cursor key is still scoped independently. */
   cursorStore?: CursorStoreLike;
-  /** Key to use for cursor storage. Defaults to "pulse-core-cursor". */
+  /** Key to use for cursor storage. Defaults to "pulse-core-cursor". When `network` is an array, each source's key is derived as `${streamKey}:${network}`. */
   streamKey?: string;
   /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
   cursorFailureThreshold?: number;
   /** Optional ABI registry client used to enrich `contract.emitted` events with `decodedData`. */
   abiRegistry?: AbiRegistryClientLike;
-  /** Soroban RPC configuration. */
+  /** Soroban RPC configuration. Ignored when `network` is an array — set `soroban` per source instead. */
   soroban?: SorobanConfig;
 };
 
