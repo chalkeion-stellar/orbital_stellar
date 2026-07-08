@@ -1,5 +1,6 @@
 import type {
   DecodeFailedNotification,
+  HealthCheckResult,
   NormalizedEvent,
   UnrecognizedOperationTypeNotification,
   Watcher,
@@ -283,6 +284,30 @@ export class WebhookDelivery {
   /** Re-deliver a stored terminal failure by dead-letter id. */
   async replayFailure(failureId: string): Promise<void> {
     await this.dlq.replay(failureId);
+  }
+
+  /**
+   * Reports whether this delivery instance and its durable retry queue (if
+   * configured) are healthy. A failing `retryQueue.ping()` flips health to
+   * unhealthy, mirroring `EventEngine.healthCheck()`'s treatment of
+   * `cursorStore.ping()`.
+   */
+  async healthCheck(): Promise<HealthCheckResult> {
+    const reasons: string[] = [];
+
+    if (this.stopped) {
+      reasons.push("webhook delivery is stopped");
+    }
+
+    if (this.retryQueue?.ping) {
+      try {
+        await this.retryQueue.ping();
+      } catch (err) {
+        reasons.push(`retryQueue: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    return { ok: reasons.length === 0, reasons };
   }
 
   private resolveDeadLetterStore(
