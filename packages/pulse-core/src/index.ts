@@ -485,6 +485,13 @@ export interface Logger {
  */
 export interface AbiRegistryClientLike {
   getSpec(contractId: string): Promise<unknown>;
+  /**
+   * Optional ledger-versioned spec lookup. When implemented, `EventEngine`
+   * calls it with the emitting event's `ledger` instead of `getSpec`, so a
+   * contract that upgraded mid-stream decodes against the spec at its
+   * ledger rather than the latest one.
+   */
+  getSpecAt?(contractId: string, ledger: number): Promise<unknown>;
 }
 
 export type SorobanConfig = {

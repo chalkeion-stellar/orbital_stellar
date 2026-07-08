@@ -2063,7 +2063,11 @@ export class EventEngine {
         // subscribers always receive a fully-enriched (or gracefully degraded)
         // event rather than a partially-populated one.
         const contractId = event.contractId;
-        this.abiRegistry.getSpec(contractId).then(
+        const specPromise =
+          this.abiRegistry.getSpecAt && event.ledger !== undefined
+            ? this.abiRegistry.getSpecAt(contractId, event.ledger)
+            : this.abiRegistry.getSpec(contractId);
+        specPromise.then(
           (spec) => {
             if (spec !== null && spec !== undefined) {
               (event as ContractEmittedEvent).decodedData =

@@ -83,6 +83,46 @@ export class AbiRegistryClient {
   }
 
   /**
+   * Fetch the contract spec as it existed at a specific ledger, for contracts
+   * that have upgraded and no longer match `getSpec`'s latest-spec lookup.
+   * The registry server is responsible for ledger-versioned spec storage;
+   * this client just passes `ledger` through as a query parameter.
+   *
+   * Cached separately from `getSpec` (keyed by `contractId@ledger`) since a
+   * historical spec must never be conflated with the latest one.
+   */
+  async getSpecAt(contractId: string, ledger: number): Promise<XdrContractSpec | null> {
+    const cacheKey = `${contractId}@${ledger}`;
+    const cached = this.getCached(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const response = await this.transport(
+      `${this.baseUrl}/specs/${encodeURIComponent(contractId)}?ledger=${encodeURIComponent(ledger)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: `application/vnd.orbital.abi-registry+json; version=${REGISTRY_SPEC_VERSION}`,
+        },
+      },
+    );
+
+    if (response.status === 404) {
+      this.setCache(cacheKey, null);
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `ABI registry responded with ${response.status} for versioned contract spec fetch`,
+      );
+    }
+
+    const spec = (await response.json()) as XdrContractSpec;
+    this.setCache(cacheKey, spec);
+    return spec;
+  }
+
+  /**
    * Fetch specs for multiple contract IDs in a single round-trip.
    * Results are cached; only uncached IDs are fetched from the registry.
    *

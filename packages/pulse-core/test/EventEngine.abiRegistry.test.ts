@@ -191,6 +191,52 @@ describe("EventEngine — ABI registry integration", () => {
     expect(received[0]!.decodedData).toBeUndefined();
   });
 
+  it("calls getSpecAt with the event's ledger instead of getSpec, when implemented", async () => {
+    const spec = { contractId: "CABC1234", entries: ["versioned-entry=="] };
+    const abiRegistry: AbiRegistryClientLike = {
+      getSpec: vi.fn().mockResolvedValue({ contractId: "CABC1234", entries: ["latest-entry=="] }),
+      getSpecAt: vi.fn().mockResolvedValue(spec),
+    };
+
+    const { engine, simulateRecord } = buildEngine(abiRegistry);
+    const received: ContractEmittedEvent[] = [];
+
+    const watcher = engine.subscribeContract("sub1");
+    watcher.on("contract.emitted", (e) => received.push(e as ContractEmittedEvent));
+
+    simulateRecord(makeEmittedRecord({ ledger: 42000 }));
+
+    await vi.waitFor(() => expect(received).toHaveLength(1));
+
+    expect(abiRegistry.getSpecAt).toHaveBeenCalledWith("CABC1234", 42000);
+    expect(abiRegistry.getSpec).not.toHaveBeenCalled();
+    expect(received[0]!.decodedData).toEqual(spec.entries);
+  });
+
+  it("falls back to getSpec when getSpecAt is implemented but the event has no ledger", async () => {
+    const spec = { contractId: "CABC1234", entries: ["latest-entry=="] };
+    const abiRegistry: AbiRegistryClientLike = {
+      getSpec: vi.fn().mockResolvedValue(spec),
+      getSpecAt: vi.fn().mockResolvedValue(null),
+    };
+
+    const { engine, simulateRecord } = buildEngine(abiRegistry);
+    const received: ContractEmittedEvent[] = [];
+
+    const watcher = engine.subscribeContract("sub1");
+    watcher.on("contract.emitted", (e) => received.push(e as ContractEmittedEvent));
+
+    const record = makeEmittedRecord();
+    delete record.ledger;
+    simulateRecord(record);
+
+    await vi.waitFor(() => expect(received).toHaveLength(1));
+
+    expect(abiRegistry.getSpecAt).not.toHaveBeenCalled();
+    expect(abiRegistry.getSpec).toHaveBeenCalledWith("CABC1234");
+    expect(received[0]!.decodedData).toEqual(spec.entries);
+  });
+
   it("does not call getSpec for contract.invoked events", async () => {
     const abiRegistry: AbiRegistryClientLike = {
       getSpec: vi.fn().mockResolvedValue(null),

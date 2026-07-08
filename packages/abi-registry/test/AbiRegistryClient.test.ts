@@ -203,6 +203,66 @@ describe("AbiRegistryClient", () => {
     });
   });
 
+  describe("getSpecAt", () => {
+    it("fetches a ledger-versioned spec from GET /specs/:id?ledger=N", async () => {
+      const spec = makeSpec("CONTRACT_Z");
+      mockFetch(() => new Response(JSON.stringify(spec), { status: 200 }));
+
+      const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
+      const result = await client.getSpecAt("CONTRACT_Z", 12345);
+
+      expect(result).toEqual(spec);
+      expect(fetch).toHaveBeenCalledWith(
+        "https://abi.example.com/specs/CONTRACT_Z?ledger=12345",
+        expect.objectContaining({ method: "GET" }),
+      );
+    });
+
+    it("returns null when no spec is recorded at that ledger (404)", async () => {
+      mockFetch(() => new Response(null, { status: 404 }));
+
+      const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
+      expect(await client.getSpecAt("CONTRACT_Z", 1)).toBeNull();
+    });
+
+    it("throws when the registry returns a non-OK status", async () => {
+      mockFetch(() => new Response("Internal Server Error", { status: 500 }));
+
+      const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
+      await expect(client.getSpecAt("CONTRACT_Z", 1)).rejects.toThrow(
+        "ABI registry responded with 500",
+      );
+    });
+
+    it("caches getSpecAt results independently of getSpec (different ledgers, different specs)", async () => {
+      const specV1 = makeSpec("CONTRACT_UPGRADED_V1");
+      const specV2 = makeSpec("CONTRACT_UPGRADED_V2");
+      const specLatest = makeSpec("CONTRACT_UPGRADED_LATEST");
+
+      const fetchMock = vi.fn((url: string) => {
+        if (url.includes("ledger=100")) {
+          return Promise.resolve(new Response(JSON.stringify(specV1), { status: 200 }));
+        }
+        if (url.includes("ledger=200")) {
+          return Promise.resolve(new Response(JSON.stringify(specV2), { status: 200 }));
+        }
+        return Promise.resolve(new Response(JSON.stringify(specLatest), { status: 200 }));
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const client = new AbiRegistryClient({ baseUrl: "https://abi.example.com" });
+
+      expect(await client.getSpecAt("CONTRACT_UPGRADED", 100)).toEqual(specV1);
+      expect(await client.getSpecAt("CONTRACT_UPGRADED", 200)).toEqual(specV2);
+      expect(await client.getSpec("CONTRACT_UPGRADED")).toEqual(specLatest);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+
+      // Re-fetching the same ledger is served from cache, not a 4th network call.
+      expect(await client.getSpecAt("CONTRACT_UPGRADED", 100)).toEqual(specV1);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+  });
+
   describe("LRU eviction", () => {
     it("evicts the least-recently-used entry when maxCacheSize is exceeded", async () => {
       // Cache size of 2: fill with A and B, then access A, then add C.
