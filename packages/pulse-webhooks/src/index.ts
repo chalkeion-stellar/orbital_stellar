@@ -60,6 +60,7 @@ export { PostgresDeadLetterStore } from "./PostgresDeadLetterStore.js";
 export { RedisRetryQueue } from "./RedisRetryQueue.js";
 export { MemoryRetryQueue } from "./MemoryRetryQueue.js";
 export { SqsRetryQueue } from "./SqsRetryQueue.js";
+export { PostgresRetryQueue } from "./PostgresRetryQueue.js";
 export { verifyWebhookEdge, verifyWebhookEdgeRaw, verifyWebhookEdgeStream } from "./edge.js";
 export { dedupReceiver, MemoryDedupStore } from "./dedup.js";
 export type { DedupStore, DedupReceiverOptions } from "./dedup.js";
@@ -73,6 +74,7 @@ export type {
 } from "./PostgresDeadLetterStore.js";
 export type { RedisLike, RedisRetryQueueOptions } from "./RedisRetryQueue.js";
 export type { MemoryRetryQueueOptions } from "./MemoryRetryQueue.js";
+export type { PostgresRetryQueueOptions } from "./PostgresRetryQueue.js";
 export type {
   SqsLike,
   SqsRetryQueueOptions,
