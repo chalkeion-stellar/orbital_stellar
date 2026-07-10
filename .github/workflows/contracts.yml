@@ -1,0 +1,56 @@
+name: Contracts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      contracts: ${{ steps.filter.outputs.contracts }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            contracts:
+              - 'contracts/**'
+
+  test:
+    needs: changes
+    if: ${{ needs.changes.outputs.contracts == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # wasm32-unknown-unknown is rejected by soroban-sdk's build script on
+          # Rust 1.82+ (reference-types/multi-value are on by default there and
+          # unsupported by the Soroban environment) — wasm32v1-none is the
+          # supported target.
+          targets: wasm32v1-none
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+
+      - name: cargo test
+        working-directory: contracts
+        run: cargo test
+
+      - name: cargo build (release, wasm32v1-none)
+        working-directory: contracts
+        run: cargo build --release --target wasm32v1-none
