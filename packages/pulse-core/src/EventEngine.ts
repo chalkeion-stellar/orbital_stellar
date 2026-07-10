@@ -1,4 +1,6 @@
 import { Horizon } from "@stellar/stellar-sdk";
+import { createDefaultAbiRegistryClient, decodeContractEvent } from "@orbital-stellar/abi-registry";
+import type { ContractSpec, XdrContractSpec } from "@orbital-stellar/abi-registry";
 import { Watcher } from "./Watcher.js";
 import { fullJitterBackoffMs } from "./backoff.js";
 import { EngineAlreadyStartedError, NetworkMismatchError } from "./errors.js";
@@ -282,7 +284,7 @@ export class EventEngine {
     // for backward compatibility / testing.
     this.streamKey = config.streamKey ?? `horizon:${config.network}`;
     this.cursorFailureThreshold = config.cursorFailureThreshold ?? 5;
-    this.abiRegistry = config.abiRegistry;
+    this.abiRegistry = EventEngine.resolveAbiRegistry(config.abiRegistry);
     this.cursorStore = config.cursorStore;
     this.network = config.network;
 
@@ -332,6 +334,32 @@ export class EventEngine {
         onEvent: async (event) => this.handleSorobanEvent(event),
       });
     }
+  }
+
+  /**
+   * Resolves `CoreConfig.abiRegistry` to the client that actually gets
+   * used: an explicit client is passed through as-is, `false` opts out of
+   * registry resolution entirely (`decodedData` stays `undefined`, matching
+   * pre-default behavior), and omitting it entirely (`undefined`) resolves
+   * the bundled well-known specs (and, once deployed, Orbital's on-chain
+   * registry) via `createDefaultAbiRegistryClient()`.
+   *
+   * In multi-network mode this runs once per sub-engine (each one re-runs
+   * the full constructor independently) rather than once at the
+   * orchestrator level — a `false`/omitted value threads through
+   * `buildNetworkSources` unresolved so each sub-engine still sees the
+   * original `false` vs. omitted distinction; the tradeoff is one separate
+   * default-client instance per network instead of one shared instance,
+   * which costs a little redundant object construction but is otherwise
+   * harmless (the bundled well-known data itself is still shared via a
+   * module-level cache in `BundledWellKnownClient`).
+   */
+  private static resolveAbiRegistry(
+    abiRegistry: CoreConfig["abiRegistry"],
+  ): AbiRegistryClientLike | undefined {
+    if (abiRegistry === false) return undefined;
+    if (abiRegistry) return abiRegistry;
+    return createDefaultAbiRegistryClient();
   }
 
   /**
@@ -2311,8 +2339,13 @@ export class EventEngine {
         specPromise.then(
           (spec) => {
             if (spec !== null && spec !== undefined) {
-              (event as ContractEmittedEvent).decodedData =
-                (spec as { entries?: unknown }).entries ?? spec;
+              const decoded = decodeContractEvent(spec as XdrContractSpec | ContractSpec, event);
+              if ("error" in decoded) {
+                (event as ContractEmittedEvent).decodedData = undefined;
+                this.emitDecodeFailedNotification(event, decoded.error);
+              } else {
+                (event as ContractEmittedEvent).decodedData = decoded;
+              }
             } else {
               (event as ContractEmittedEvent).decodedData = undefined;
               this.emitDecodeFailedNotification(

@@ -37,6 +37,7 @@
     "bench:soroban-throughput": "tsx bench/soroban-throughput.ts"
   },
   "dependencies": {
+    "@orbital-stellar/abi-registry": "workspace:*",
     "@stellar/stellar-sdk": "^16.0.1",
     "yargs": "^18.0.0"
   },

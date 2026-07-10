@@ -22,7 +22,7 @@ function makeEmittedRecord(overrides: Record<string, unknown> = {}): Record<stri
   };
 }
 
-function buildEngine(abiRegistry?: AbiRegistryClientLike): {
+function buildEngine(abiRegistry?: AbiRegistryClientLike | false): {
   engine: EventEngine;
   simulateRecord: (record: unknown) => void;
 } {
@@ -59,7 +59,7 @@ describe("EventEngine — ABI registry integration", () => {
     vi.restoreAllMocks();
   });
 
-  it("populates decodedData when the registry returns a spec for the contractId", async () => {
+  it("populates decodedData with the decoded event (not the raw spec) when the registry returns a spec for the contractId", async () => {
     const spec = { contractId: "CABC1234", entries: ["base64entry=="] };
     const abiRegistry: AbiRegistryClientLike = {
       getSpec: vi.fn().mockResolvedValue(spec),
@@ -79,7 +79,11 @@ describe("EventEngine — ABI registry integration", () => {
     await vi.waitFor(() => expect(received).toHaveLength(1));
 
     expect(abiRegistry.getSpec).toHaveBeenCalledWith("CABC1234");
-    expect(received[0]!.decodedData).toEqual(spec.entries);
+    expect(received[0]!.decodedData).toEqual({
+      functionName: "transfer",
+      topics: ["transfer", "GABC"],
+      data: "100",
+    });
   });
 
   it("emits event.decode_failed and leaves decodedData undefined on a registry miss", async () => {
@@ -176,9 +180,8 @@ describe("EventEngine — ABI registry integration", () => {
     );
   });
 
-  it("skips ABI lookup entirely when no abiRegistry is configured", async () => {
-    // No abiRegistry — engine constructed without it
-    const { engine, simulateRecord } = buildEngine(undefined);
+  it("performs no ABI lookup and leaves decodedData undefined when abiRegistry: false", () => {
+    const { engine, simulateRecord } = buildEngine(false);
     const received: ContractEmittedEvent[] = [];
 
     const watcher = engine.subscribeContract("sub1");
@@ -189,6 +192,35 @@ describe("EventEngine — ABI registry integration", () => {
     // Synchronous delivery — no async step needed
     expect(received).toHaveLength(1);
     expect(received[0]!.decodedData).toBeUndefined();
+  });
+
+  it("resolves the bundled well-known registry by default when abiRegistry is omitted entirely", async () => {
+    const USDC = "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75";
+    // abiRegistry omitted — buildEngine(undefined) passes CoreConfig.abiRegistry
+    // as undefined, which now resolves createDefaultAbiRegistryClient().
+    const { engine, simulateRecord } = buildEngine(undefined);
+    const received: ContractEmittedEvent[] = [];
+
+    const watcher = engine.subscribeContract("sub1", {
+      filters: [{ contractIds: [USDC] }],
+    });
+    watcher.on("contract.emitted", (e) => received.push(e as ContractEmittedEvent));
+
+    simulateRecord(
+      makeEmittedRecord({
+        contract_id: USDC,
+        topics: [{ sym: "transfer" }, { address: "GFROM" }, { address: "GTO" }],
+        data: { i128: "10000000" },
+      }),
+    );
+
+    await vi.waitFor(() => expect(received).toHaveLength(1));
+
+    expect(received[0]!.decodedData).toEqual({
+      functionName: "transfer",
+      topics: ["transfer", "GFROM", "GTO"],
+      data: "10000000",
+    });
   });
 
   it("calls getSpecAt with the event's ledger instead of getSpec, when implemented", async () => {
@@ -210,7 +242,11 @@ describe("EventEngine — ABI registry integration", () => {
 
     expect(abiRegistry.getSpecAt).toHaveBeenCalledWith("CABC1234", 42000);
     expect(abiRegistry.getSpec).not.toHaveBeenCalled();
-    expect(received[0]!.decodedData).toEqual(spec.entries);
+    expect(received[0]!.decodedData).toEqual({
+      functionName: "transfer",
+      topics: ["transfer", "GABC"],
+      data: "100",
+    });
   });
 
   it("falls back to getSpec when getSpecAt is implemented but the event has no ledger", async () => {
@@ -234,7 +270,11 @@ describe("EventEngine — ABI registry integration", () => {
 
     expect(abiRegistry.getSpecAt).not.toHaveBeenCalled();
     expect(abiRegistry.getSpec).toHaveBeenCalledWith("CABC1234");
-    expect(received[0]!.decodedData).toEqual(spec.entries);
+    expect(received[0]!.decodedData).toEqual({
+      functionName: "transfer",
+      topics: ["transfer", "GABC"],
+      data: "100",
+    });
   });
 
   it("does not call getSpec for contract.invoked events", async () => {

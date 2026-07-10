@@ -96,7 +96,7 @@ afterEach(() => {
 describe("EventEngine — pause/resume per source", () => {
   describe("pauseSource() and resumeSource()", () => {
     it("pauses Horizon source and stops emitting Horizon events", () => {
-      const engine = new EventEngine({ network: "testnet" });
+      const engine = new EventEngine({ network: "testnet", abiRegistry: false });
       engine.start();
 
       const watcher = engine.subscribe("GABC");
@@ -123,7 +123,7 @@ describe("EventEngine — pause/resume per source", () => {
     });
 
     it("pauses Soroban source and stops emitting contract events", () => {
-      const engine = new EventEngine({ network: "testnet" });
+      const engine = new EventEngine({ network: "testnet", abiRegistry: false });
       engine.start();
 
       const watcher = engine.subscribeContract("sub1");
@@ -150,7 +150,7 @@ describe("EventEngine — pause/resume per source", () => {
     });
 
     it("pausing Horizon keeps Soroban running", () => {
-      const engine = new EventEngine({ network: "testnet" });
+      const engine = new EventEngine({ network: "testnet", abiRegistry: false });
       engine.start();
 
       const horizonWatcher = engine.subscribe("GABC");
@@ -181,7 +181,7 @@ describe("EventEngine — pause/resume per source", () => {
     });
 
     it("pausing Soroban keeps Horizon running", () => {
-      const engine = new EventEngine({ network: "testnet" });
+      const engine = new EventEngine({ network: "testnet", abiRegistry: false });
       engine.start();
 
       const horizonWatcher = engine.subscribe("GABC");
@@ -212,7 +212,7 @@ describe("EventEngine — pause/resume per source", () => {
     });
 
     it("resuming continues from the last delivered cursor position", () => {
-      const engine = new EventEngine({ network: "testnet" });
+      const engine = new EventEngine({ network: "testnet", abiRegistry: false });
       engine.start();
 
       const watcher = engine.subscribe("GABC");
@@ -247,7 +247,7 @@ describe("EventEngine — pause/resume per source", () => {
     });
 
     it("status reflects paused state per source", () => {
-      const engine = new EventEngine({ network: "testnet" });
+      const engine = new EventEngine({ network: "testnet", abiRegistry: false });
       engine.start();
 
       // Initially no sources paused
@@ -280,7 +280,7 @@ describe("EventEngine — pause/resume per source", () => {
 
     it("warns when pausing an already paused source", () => {
       const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-      const engine = new EventEngine({ network: "testnet", logger: log });
+      const engine = new EventEngine({ network: "testnet", logger: log, abiRegistry: false });
       engine.start();
 
       engine.pauseSource("horizon");
@@ -295,7 +295,7 @@ describe("EventEngine — pause/resume per source", () => {
 
     it("warns when resuming a non-paused source", () => {
       const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-      const engine = new EventEngine({ network: "testnet", logger: log });
+      const engine = new EventEngine({ network: "testnet", logger: log, abiRegistry: false });
       engine.start();
 
       engine.resumeSource("horizon");
@@ -306,7 +306,7 @@ describe("EventEngine — pause/resume per source", () => {
     });
 
     it("clears paused sources when engine is stopped", () => {
-      const engine = new EventEngine({ network: "testnet" });
+      const engine = new EventEngine({ network: "testnet", abiRegistry: false });
       engine.start();
 
       engine.pauseSource("horizon");
@@ -322,7 +322,7 @@ describe("EventEngine — pause/resume per source", () => {
     });
 
     it("pauses contract.emitted events when Soroban is paused", () => {
-      const engine = new EventEngine({ network: "testnet" });
+      const engine = new EventEngine({ network: "testnet", abiRegistry: false });
       engine.start();
 
       const watcher = engine.subscribeContract("sub1");
@@ -349,7 +349,7 @@ describe("EventEngine — pause/resume per source", () => {
     });
 
     it("pauses all Horizon event types when Horizon is paused", () => {
-      const engine = new EventEngine({ network: "testnet" });
+      const engine = new EventEngine({ network: "testnet", abiRegistry: false });
       engine.start();
 
       const watcher = engine.subscribe("GABC");
@@ -382,7 +382,7 @@ describe("EventEngine — pause/resume per source", () => {
     });
 
     it("allows independent pause/resume cycles for each source", () => {
-      const engine = new EventEngine({ network: "testnet" });
+      const engine = new EventEngine({ network: "testnet", abiRegistry: false });
       engine.start();
 
       const horizonWatcher = engine.subscribe("GABC");
@@ -431,14 +431,14 @@ describe("EventEngine — graceful shutdown", () => {
   });
 
   it("stop() is awaitable and resolves", async () => {
-    const engine = new EventEngine({ network: "testnet" });
+    const engine = new EventEngine({ network: "testnet", abiRegistry: false });
     engine.start();
 
     await expect(engine.stop()).resolves.toBeUndefined();
   });
 
   it("stop() resolves cleanly before the engine has started", async () => {
-    const engine = new EventEngine({ network: "testnet" });
+    const engine = new EventEngine({ network: "testnet", abiRegistry: false });
 
     await expect(engine.stop()).resolves.toBeUndefined();
   });

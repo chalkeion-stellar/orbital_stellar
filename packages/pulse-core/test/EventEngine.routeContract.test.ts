@@ -10,7 +10,10 @@ function buildEngine(): {
   engine: EventEngine;
   simulateRecord: (record: unknown) => void;
 } {
-  const engine = new EventEngine({ network: "testnet" });
+  // abiRegistry: false — this suite tests routing/filtering, not registry
+  // resolution; opting out keeps contract.emitted delivery synchronous like
+  // the rest of the assertions here assume.
+  const engine = new EventEngine({ network: "testnet", abiRegistry: false });
 
   let capturedOnMessage: ((record: unknown) => void) | null = null;
 

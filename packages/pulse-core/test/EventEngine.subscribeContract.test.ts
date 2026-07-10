@@ -6,7 +6,7 @@ function buildEngine(log?: any): {
   engine: EventEngine;
   simulateRecord: (record: unknown) => void;
 } {
-  const engine = new EventEngine({ network: "testnet", logger: log });
+  const engine = new EventEngine({ network: "testnet", logger: log, abiRegistry: false });
 
   let capturedOnMessage: ((record: unknown) => void) | null = null;
 
@@ -142,7 +142,7 @@ describe("EventEngine.subscribeContract — filter predicate", () => {
 
 describe("EventEngine.awaitContractSubscriptionActive", () => {
   it("resolves when a poll includes the requested topics", async () => {
-    const engine = new EventEngine({ network: "testnet" });
+    const engine = new EventEngine({ network: "testnet", abiRegistry: false });
 
     const p = engine.awaitContractSubscriptionActive(
       { contractId: "C1", topics: ["t1", "t2"] },
@@ -156,7 +156,7 @@ describe("EventEngine.awaitContractSubscriptionActive", () => {
   });
 
   it("resolves when a poll has no topic restriction (covers all)", async () => {
-    const engine = new EventEngine({ network: "testnet" });
+    const engine = new EventEngine({ network: "testnet", abiRegistry: false });
 
     const p = engine.awaitContractSubscriptionActive(
       { contractId: "C2", topics: ["alpha"] },
@@ -170,7 +170,7 @@ describe("EventEngine.awaitContractSubscriptionActive", () => {
   });
 
   it("does not resolve if polled topics do not include requested topics", async () => {
-    const engine = new EventEngine({ network: "testnet" });
+    const engine = new EventEngine({ network: "testnet", abiRegistry: false });
 
     const p = engine.awaitContractSubscriptionActive(
       { contractId: "C3", topics: ["x", "y"] },
@@ -184,7 +184,7 @@ describe("EventEngine.awaitContractSubscriptionActive", () => {
   });
 
   it("resolves immediately when no topics requested", async () => {
-    const engine = new EventEngine({ network: "testnet" });
+    const engine = new EventEngine({ network: "testnet", abiRegistry: false });
 
     const p = engine.awaitContractSubscriptionActive({ contractId: "C4" }, { timeoutMs: 1000 });
 
@@ -196,7 +196,7 @@ describe("EventEngine.awaitContractSubscriptionActive", () => {
 });
 
 function makeEngine(): EventEngine {
-  return new EventEngine({ network: "testnet" });
+  return new EventEngine({ network: "testnet", abiRegistry: false });
 }
 
 describe("engine.subscribeContract(config)", () => {

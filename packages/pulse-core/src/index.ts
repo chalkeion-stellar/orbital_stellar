@@ -554,8 +554,15 @@ export type CoreConfig = {
   streamKey?: string;
   /** Number of consecutive cursor store failures before marking it unhealthy. Defaults to 5. */
   cursorFailureThreshold?: number;
-  /** Optional ABI registry client used to enrich `contract.emitted` events with `decodedData`. */
-  abiRegistry?: AbiRegistryClientLike;
+  /**
+   * ABI registry client used to enrich `contract.emitted` events with
+   * `decodedData`. Defaults to resolving the bundled well-known specs (and,
+   * once deployed, Orbital's on-chain registry) when omitted — pass
+   * `false` to opt out of registry resolution entirely and keep
+   * `decodedData` always `undefined`, or pass an explicit client to use
+   * only that client.
+   */
+  abiRegistry?: AbiRegistryClientLike | false;
   /** Soroban RPC configuration. Ignored when `network` is an array — set `soroban` per source instead. */
   soroban?: SorobanConfig;
 };
