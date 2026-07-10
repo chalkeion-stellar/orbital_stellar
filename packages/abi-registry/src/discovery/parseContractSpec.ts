@@ -9,12 +9,29 @@
  * guessed.
  */
 
+import { createRequire } from "node:module";
 import { xdr } from "@stellar/stellar-sdk";
-import jsXdrPkg from "@stellar/js-xdr";
 import { mapSpecEntries } from "./xdrToSpec.js";
+import type { XdrReader as XdrReaderType } from "@stellar/js-xdr";
 import type { EventSpec, FunctionSpec, UserDefinedType } from "../spec.js";
 
-const { XdrReader } = jsXdrPkg;
+// @stellar/js-xdr resolves to two different module shapes depending on the
+// bundler: plain Node resolves its CJS `main` entry (a flat exports object,
+// no static ESM exports to speak of), while Turbopack/webpack (via Next.js)
+// resolves its real-ESM `module` entry (named exports, no default). A
+// static `import` — default, namespace, or named — can't satisfy both:
+// Turbopack statically verifies every export reference against whichever
+// shape it resolved, including inside an unreached `??` branch, so even a
+// dual-fallback expression trips "Export default doesn't exist". `require`
+// sidesteps this entirely — it's opaque to static export analysis and
+// always resolves the flat CJS shape. Safe here because every call path
+// into this module runs under Next.js's `nodejs` runtime (not Edge), where
+// `require` is available. Verified against a plain Node run and a real
+// Next.js Turbopack production build.
+const require = createRequire(import.meta.url);
+const XdrReader: typeof XdrReaderType = (
+  require("@stellar/js-xdr") as { XdrReader: typeof XdrReaderType }
+).XdrReader;
 
 export class NoEmbeddedSpecError extends Error {
   constructor() {
