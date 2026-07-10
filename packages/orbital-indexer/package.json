@@ -1,0 +1,39 @@
+{
+  "name": "@orbital-stellar/orbital-indexer",
+  "version": "0.1.0",
+  "description": "Auto-publish indexer: discovers unknown contracts' interfaces via WASM auto-discovery and publishes them to the on-chain ABI registry as part of normal engine operation.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/determined-001/orbital_stellar.git",
+    "directory": "packages/orbital-indexer"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@orbital-stellar/abi-registry": "workspace:*",
+    "@orbital-stellar/pulse-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.9"
+  }
+}
