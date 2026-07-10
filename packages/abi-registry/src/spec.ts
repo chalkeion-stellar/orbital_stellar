@@ -24,7 +24,16 @@ export type PrimitiveType =
   | "string"
   | "symbol"
   | "address"
-  | "void";
+  | "void"
+  /**
+   * The generic Soroban error-value slot (`scvError` on the wire). Appears
+   * as the error arm of `Result<T, Error>` return types — the XDR spec
+   * format encodes it as this generic placeholder even when the Rust
+   * signature names a specific `#[contracterror]` enum; the specific enum
+   * is a separate `types` entry, correlated by convention rather than a
+   * direct type reference. Verified against a real soroban-sdk 27 build.
+   */
+  | "error";
 
 /** Fixed-length byte array, e.g. `bytes_n<32>`. */
 export type BytesNType = { readonly type: "bytes_n"; readonly size: number };
@@ -189,6 +198,14 @@ export type ContractSpec = {
   readonly types: Readonly<Record<string, UserDefinedType>>;
   /** Raw XDR entries as base64 strings (if available from on-chain data). */
   readonly xdrEntries?: ReadonlyArray<string>;
+  /**
+   * Off-chain locator for the full spec blob (e.g. a URL). Required to
+   * publish through {@link OnChainRegistryPublisher} — the on-chain registry
+   * stores this pointer alongside a hash of the canonical spec JSON so a
+   * resolver can fetch the blob and verify it wasn't tampered with. Not
+   * interpreted by this package; purely a value the caller round-trips.
+   */
+  readonly pointer?: string;
 };
 
 // ── Runtime validation ────────────────────────────────────────────────────────
@@ -212,6 +229,7 @@ const PRIMITIVE_TYPES: ReadonlySet<string> = new Set<PrimitiveType>([
   "symbol",
   "address",
   "void",
+  "error",
 ]);
 
 const COMPOSITE_TYPE_TAGS = new Set([
@@ -399,6 +417,39 @@ export function validateSpec(spec: unknown): ValidationResult {
       errors.push("xdrEntries: must be an array of strings");
     }
   }
+  if (spec["pointer"] !== undefined) {
+    if (typeof spec["pointer"] !== "string" || spec["pointer"].length === 0) {
+      errors.push("pointer: must be a non-empty string");
+    }
+  }
 
   return errors.length === 0 ? { valid: true } : { valid: false, errors };
+}
+
+// ── Canonical serialization ────────────────────────────────────────────────────
+
+/**
+ * Deterministically serializes a {@link ContractSpec} to JSON with object keys
+ * sorted recursively, so semantically identical specs always hash to the same
+ * `spec_hash` regardless of property insertion order. This is what
+ * {@link OnChainRegistryPublisher} hashes before publishing, and what any
+ * resolver must re-hash to verify a fetched spec blob against the on-chain
+ * `spec_hash`.
+ */
+export function canonicalizeSpec(spec: ContractSpec): string {
+  return JSON.stringify(sortKeysDeep(spec));
+}
+
+function sortKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortKeysDeep);
+  }
+  if (isRecord(value)) {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+      sorted[key] = sortKeysDeep(value[key]);
+    }
+    return sorted;
+  }
+  return value;
 }
