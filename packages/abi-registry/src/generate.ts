@@ -1,5 +1,6 @@
 import { xdr } from "@stellar/stellar-sdk";
 import type { XdrContractSpec } from "./types.js";
+import type { ContractSpec, EventSpec, FunctionSpec, TypeSpec, UserDefinedType } from "./spec.js";
 
 export type GeneratedContractArtifacts = {
   declarations: string;
@@ -118,7 +119,11 @@ function mapTypeToZod(type: xdr.ScSpecTypeDef | undefined): string {
   }
 }
 
-export function generateContractArtifacts(spec: XdrContractSpec): GeneratedContractArtifacts {
+function isXdrContractSpec(spec: XdrContractSpec | ContractSpec): spec is XdrContractSpec {
+  return Array.isArray((spec as XdrContractSpec).entries);
+}
+
+function generateFromXdrContractSpec(spec: XdrContractSpec): GeneratedContractArtifacts {
   const entries = spec.entries
     .map((entry) => {
       try {
@@ -176,7 +181,244 @@ export function generateContractArtifacts(spec: XdrContractSpec): GeneratedContr
   };
 }
 
-export function generateContractTypes(spec: XdrContractSpec): string {
+// ---------------------------------------------------------------------------
+// Canonical ContractSpec → TS declarations + Zod schemas.
+//
+// Unlike the XDR path above (events only, no function signatures — that's
+// all the raw XDR entries alone conveniently give you), a ContractSpec is
+// already fully structured, so this path also emits typed function
+// parameter/return declarations and named UDT interfaces, per maintainer.md
+// stage 5's `orbital typegen` requirement.
+// ---------------------------------------------------------------------------
+
+function mapContractSpecTypeToTs(type: TypeSpec): string {
+  if (typeof type === "string") {
+    switch (type) {
+      case "bool":
+        return "boolean";
+      case "u32":
+      case "i32":
+        return "number";
+      case "void":
+        return "void";
+      case "u64":
+      case "i64":
+      case "u128":
+      case "i128":
+      case "u256":
+      case "i256":
+      case "bytes":
+      case "string":
+      case "symbol":
+      case "address":
+        return "string";
+      case "error":
+        return "unknown";
+    }
+  }
+  switch (type.type) {
+    case "bytes_n":
+      return "string";
+    case "option":
+      return `${mapContractSpecTypeToTs(type.inner)} | null`;
+    case "result":
+      // Callers get the Ok shape; a rejected/error result is a thrown exception, not a TS union member.
+      return mapContractSpecTypeToTs(type.ok);
+    case "vec":
+      return `Array<${mapContractSpecTypeToTs(type.item)}>`;
+    case "map":
+      return `Array<{ key: ${mapContractSpecTypeToTs(type.key)}; value: ${mapContractSpecTypeToTs(type.value)} }>`;
+    case "tuple":
+      return `[${type.elements.map(mapContractSpecTypeToTs).join(", ")}]`;
+    case "named":
+      return toPascalCase(type.name);
+  }
+}
+
+function mapContractSpecTypeToZod(type: TypeSpec): string {
+  if (typeof type === "string") {
+    switch (type) {
+      case "bool":
+        return "z.boolean()";
+      case "u32":
+      case "i32":
+        return "z.number()";
+      case "void":
+        return "z.void()";
+      case "u64":
+      case "i64":
+      case "u128":
+      case "i128":
+      case "u256":
+      case "i256":
+      case "bytes":
+      case "string":
+      case "symbol":
+      case "address":
+        return "z.string()";
+      case "error":
+        return "z.unknown()";
+    }
+  }
+  switch (type.type) {
+    case "bytes_n":
+      return "z.string()";
+    case "option":
+      return `${mapContractSpecTypeToZod(type.inner)}.nullable()`;
+    case "result":
+      return mapContractSpecTypeToZod(type.ok);
+    case "vec":
+      return `z.array(${mapContractSpecTypeToZod(type.item)})`;
+    case "map":
+      return `z.array(z.object({ key: ${mapContractSpecTypeToZod(type.key)}, value: ${mapContractSpecTypeToZod(type.value)} }))`;
+    case "tuple":
+      return `z.tuple([${type.elements.map(mapContractSpecTypeToZod).join(", ")}])`;
+    case "named":
+      return `${toPascalCase(type.name)}Schema`;
+  }
+}
+
+function generateUdtDeclarations(types: Readonly<Record<string, UserDefinedType>>): {
+  declarations: string[];
+  schemas: string[];
+} {
+  const declarations: string[] = [];
+  const schemas: string[] = [];
+
+  for (const udt of Object.values(types)) {
+    const name = toPascalCase(udt.name);
+
+    if (udt.kind === "struct") {
+      declarations.push(`export interface ${name} {`);
+      declarations.push(
+        ...udt.fields.map((f) => `  ${toCamelCase(f.name)}: ${mapContractSpecTypeToTs(f.type)};`),
+      );
+      declarations.push("}");
+      declarations.push("");
+
+      schemas.push(`export const ${name}Schema = z.object({`);
+      schemas.push(
+        ...udt.fields.map((f) => `  ${toCamelCase(f.name)}: ${mapContractSpecTypeToZod(f.type)},`),
+      );
+      schemas.push("});");
+      schemas.push("");
+    } else if (udt.kind === "enum") {
+      const variantNames = udt.variants.map((v) => `"${v.name}"`);
+      declarations.push(`export type ${name} = ${variantNames.join(" | ") || "never"};`);
+      declarations.push("");
+
+      schemas.push(`export const ${name}Schema = z.enum([${variantNames.join(", ")}]);`);
+      schemas.push("");
+    } else {
+      // union: a Rust enum-with-data, cases are either unit (void) or carry positional fields.
+      const caseTypes = udt.cases.map((c) => {
+        if (c.fields.length === 0) return `{ case: "${c.name}" }`;
+        const valueTypes = c.fields.map((f) => mapContractSpecTypeToTs(f.type)).join(", ");
+        return `{ case: "${c.name}"; values: [${valueTypes}] }`;
+      });
+      declarations.push(`export type ${name} = ${caseTypes.join(" | ") || "never"};`);
+      declarations.push("");
+
+      const caseSchemas = udt.cases.map((c) => {
+        if (c.fields.length === 0) return `z.object({ case: z.literal("${c.name}") })`;
+        const valueSchemas = c.fields.map((f) => mapContractSpecTypeToZod(f.type)).join(", ");
+        return `z.object({ case: z.literal("${c.name}"), values: z.tuple([${valueSchemas}]) })`;
+      });
+      schemas.push(
+        `export const ${name}Schema = ${caseSchemas.length > 1 ? `z.union([${caseSchemas.join(", ")}])` : (caseSchemas[0] ?? "z.never()")};`,
+      );
+      schemas.push("");
+    }
+  }
+
+  return { declarations, schemas };
+}
+
+function generateFunctionDeclarations(functions: ReadonlyArray<FunctionSpec>): string[] {
+  const usedNames = new Set<string>();
+  const declarations: string[] = [];
+
+  for (const fn of functions) {
+    const baseName = toPascalCase(fn.name);
+    const paramsName = ensureUniqueName(`${baseName}Params`, usedNames);
+    const returnsName = ensureUniqueName(`${baseName}Returns`, usedNames);
+
+    if (fn.params.length === 0) {
+      declarations.push(`export type ${paramsName} = Record<string, never>;`);
+    } else {
+      declarations.push(`export interface ${paramsName} {`);
+      declarations.push(
+        ...fn.params.map((p) => `  ${toCamelCase(p.name)}: ${mapContractSpecTypeToTs(p.type)};`),
+      );
+      declarations.push("}");
+    }
+    declarations.push(`export type ${returnsName} = ${mapContractSpecTypeToTs(fn.returns)};`);
+    declarations.push("");
+  }
+
+  return declarations;
+}
+
+function generateEventDeclarations(events: ReadonlyArray<EventSpec>): {
+  declarations: string[];
+  schemas: string[];
+} {
+  const usedNames = new Set<string>();
+  const declarations: string[] = [];
+  const schemas: string[] = [];
+
+  for (const event of events) {
+    const baseName = toPascalCase(event.name);
+    const interfaceName = ensureUniqueName(`${baseName}Event`, usedNames);
+    const schemaName = `${interfaceName}Schema`;
+
+    declarations.push(`export interface ${interfaceName} {`);
+    declarations.push(
+      ...event.data.map((f) => `  ${toCamelCase(f.name)}: ${mapContractSpecTypeToTs(f.type)};`),
+    );
+    declarations.push("}");
+    declarations.push("");
+
+    schemas.push(`export const ${schemaName} = z.object({`);
+    schemas.push(
+      ...event.data.map((f) => `  ${toCamelCase(f.name)}: ${mapContractSpecTypeToZod(f.type)},`),
+    );
+    schemas.push("});");
+    schemas.push("");
+  }
+
+  return { declarations, schemas };
+}
+
+function generateFromContractSpec(spec: ContractSpec): GeneratedContractArtifacts {
+  const declarations: string[] = ['import { z } from "zod";', ""];
+  const schemas: string[] = [];
+
+  const udts = generateUdtDeclarations(spec.types);
+  declarations.push(...udts.declarations);
+  schemas.push(...udts.schemas);
+
+  declarations.push(...generateFunctionDeclarations(spec.functions));
+
+  const events = generateEventDeclarations(spec.events);
+  declarations.push(...events.declarations);
+  schemas.push(...events.schemas);
+
+  return {
+    declarations: declarations.join("\n"),
+    schemas: schemas.join("\n"),
+  };
+}
+
+export function generateContractArtifacts(
+  spec: XdrContractSpec | ContractSpec,
+): GeneratedContractArtifacts {
+  return isXdrContractSpec(spec)
+    ? generateFromXdrContractSpec(spec)
+    : generateFromContractSpec(spec);
+}
+
+export function generateContractTypes(spec: XdrContractSpec | ContractSpec): string {
   const artifacts = generateContractArtifacts(spec);
   return [artifacts.declarations, artifacts.schemas].filter(Boolean).join("\n\n");
 }
