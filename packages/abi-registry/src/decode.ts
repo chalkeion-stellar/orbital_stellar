@@ -32,6 +32,7 @@
 
 import { xdr, StrKey } from "@stellar/stellar-sdk";
 import type { XdrContractSpec } from "./types.js";
+import type { ContractSpec } from "./spec.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -75,21 +76,39 @@ export type DecodeResult = DecodedEvent | DecodeError;
 /**
  * Decode a raw Soroban contract event against a known contract spec.
  *
- * @param spec - The {@link XdrContractSpec} describing the contract's ABI.
+ * @param spec - The {@link XdrContractSpec} or {@link ContractSpec} describing
+ *   the contract's ABI. A `ContractSpec` is normalized to its `xdrEntries`
+ *   internally; specs with no `xdrEntries` decode with type context unavailable
+ *   (topics/data are still decoded structurally, just without struct-name hints).
  * @param rawEvent - The raw event object as emitted by pulse-core
  *   (`ContractEmittedEvent` or `ContractInvokedEvent`). Must have `topics`
  *   (array) and `data` fields.
  * @returns A {@link DecodedEvent} on success, or `{ error: string }` on
  *   any shape mismatch or unsupported type — never throws.
  */
-export function decodeContractEvent(spec: XdrContractSpec, rawEvent: unknown): DecodeResult {
+export function decodeContractEvent(
+  spec: XdrContractSpec | ContractSpec,
+  rawEvent: unknown,
+): DecodeResult {
   try {
-    return _decode(spec, rawEvent);
+    return _decode(normalizeSpec(spec), rawEvent);
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/** Normalizes a `ContractSpec` down to the `{contractId, entries}` shape `_decode` operates on. */
+function normalizeSpec(spec: XdrContractSpec | ContractSpec): XdrContractSpec {
+  if (Array.isArray((spec as XdrContractSpec).entries)) {
+    return spec as XdrContractSpec;
+  }
+  const contractSpec = spec as ContractSpec;
+  return {
+    contractId: contractSpec.contractId ?? "",
+    entries: contractSpec.xdrEntries ? [...contractSpec.xdrEntries] : [],
+  };
 }
 
 function _decode(spec: XdrContractSpec, rawEvent: unknown): DecodeResult {
@@ -104,8 +123,10 @@ function _decode(spec: XdrContractSpec, rawEvent: unknown): DecodeResult {
     return { error: "rawEvent.topics must be an array" };
   }
 
-  // --- Validate contractId against spec when present in the event ---
-  if ("contractId" in event && event["contractId"] !== undefined) {
+  // --- Validate contractId against spec when present in the event AND the spec ---
+  // (a ContractSpec's contractId is optional — "" after normalization means "unknown",
+  // in which case there's nothing meaningful to compare against.)
+  if (spec.contractId && "contractId" in event && event["contractId"] !== undefined) {
     if (event["contractId"] !== spec.contractId) {
       return {
         error: `contractId mismatch: spec=${spec.contractId}, event=${event["contractId"]}`,

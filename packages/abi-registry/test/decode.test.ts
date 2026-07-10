@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { decodeContractEvent } from "../src/decode.js";
 import type { ContractSpec } from "../src/types.js";
+import type { ContractSpec as CanonicalContractSpec } from "../src/spec.js";
 import type { DecodedEvent } from "../src/decode.js";
 
 // ---------------------------------------------------------------------------
@@ -650,5 +651,53 @@ describe("decodeContractEvent — contractId validation", () => {
       data: null,
     });
     expect(isDecoded(result)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Canonical ContractSpec acceptance (camelCase, functions/events/types, xdrEntries)
+// ---------------------------------------------------------------------------
+
+describe("decodeContractEvent — accepts the canonical ContractSpec shape", () => {
+  const CANONICAL_SPEC: CanonicalContractSpec = {
+    version: "1.0.0",
+    name: "USDC",
+    contractId: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+    functions: [],
+    events: [],
+    types: {},
+    xdrEntries: [],
+  };
+
+  it("decodes successfully when given a ContractSpec instead of an XdrContractSpec", () => {
+    const result = decodeContractEvent(CANONICAL_SPEC, {
+      contractId: CANONICAL_SPEC.contractId,
+      topics: [{ sym: "transfer" }],
+      data: { u32: 42 },
+    });
+    expect(isDecoded(result)).toBe(true);
+    const decoded = result as DecodedEvent;
+    expect(decoded.functionName).toBe("transfer");
+    expect(decoded.data).toBe(42);
+  });
+
+  it("treats a missing spec contractId as unknown and skips the mismatch check", () => {
+    const { contractId: _omit, ...specWithoutContractId } = CANONICAL_SPEC;
+    const result = decodeContractEvent(specWithoutContractId as CanonicalContractSpec, {
+      contractId: "CANYTHING00000000000000000000000000000000000000000000000",
+      topics: [{ sym: "transfer" }],
+      data: null,
+    });
+    expect(isDecoded(result)).toBe(true);
+  });
+
+  it("still reports a contractId mismatch when the spec's contractId is set", () => {
+    const result = decodeContractEvent(CANONICAL_SPEC, {
+      contractId: "CDIFFERENT0000000000000000000000000000000000000000000000",
+      topics: [{ sym: "transfer" }],
+      data: null,
+    });
+    expect(isError(result)).toBe(true);
+    expect((result as { error: string }).error).toMatch(/contractId mismatch/);
   });
 });
