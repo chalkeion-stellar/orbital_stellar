@@ -69,6 +69,8 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
       - name: Build pulse-core
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
       - name: Typecheck abi-registry
@@ -96,6 +98,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
       - name: Build pulse-core
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
       - name: Build pulse-notify
@@ -117,6 +121,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build abi-registry
+        run: pnpm tsc -p packages/abi-registry/tsconfig.json
       - name: Build pulse-core
         run: pnpm tsc -p packages/pulse-core/tsconfig.json
       - name: Build pulse-webhooks
