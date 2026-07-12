@@ -25,12 +25,22 @@ jobs:
         id: filter
         with:
           filters: |
+            # Root manifests + lockfile affect every workspace project — a
+            # dependency-only change must not skip the test jobs.
             packages:
               - 'packages/**'
               - 'tsconfig.base.json'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/ci.yml'
             web:
               - 'apps/web/**'
               - 'packages/**'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/ci.yml'
 
   lint:
     needs: changes
