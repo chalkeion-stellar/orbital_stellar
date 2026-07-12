@@ -5,7 +5,13 @@ allowBuilds:
   esbuild: false
 # pnpm v10 reads dependency overrides from here, NOT from package.json.
 # axios <1.16.0 has the Proxy-Authorization credential-leak advisories (GHSA-j5f8-grm9-p9fc et al.).
+# postcss <8.5.10 has the </style> XSS advisory (GHSA-qx2v-qp2m-jg93) — next pins 8.4.31.
+# js-yaml 3.x <3.15.0 has the merge-key DoS advisory (GHSA-h67p-54hq-rp68) via gray-matter;
+# scoped to @3 so a future js-yaml 4.x consumer is never downgraded.
 overrides:
   path-to-regexp: 0.1.13
-  vite: 7.3.3
+  vite: 7.3.6
   axios: 1.17.0
+  postcss: ^8.5.16
+  "js-yaml@3": ^3.15.0
+  undici: ^7.28.0

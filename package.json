@@ -22,11 +22,6 @@
   "lint-staged": {
     "packages/**/*.{ts,tsx,json}": "prettier --write"
   },
-  "pnpm": {
-    "overrides": {
-      "undici": "^7.28.0"
-    }
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.6.0",
