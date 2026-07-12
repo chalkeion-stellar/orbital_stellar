@@ -129,3 +129,23 @@ jobs:
         run: pnpm tsc -p packages/pulse-webhooks/tsconfig.json
       - name: Typecheck apps/web
         run: pnpm tsc --noEmit -p apps/web/tsconfig.json
+
+  build-web:
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # orbital/web's prebuild builds pulse-core + pulse-webhooks (with their
+      # workspace deps, incl. abi-registry) and generates reference docs, so
+      # no manual dependency-order steps here.
+      - name: Build apps/web
+        run: pnpm --filter orbital/web run build
