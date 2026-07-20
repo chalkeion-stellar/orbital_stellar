@@ -59,6 +59,11 @@ jobs:
           # test/integration/soroban.test.ts self-skips with a clear message.
           SOROBAN_CONTRACT_ID: ${{ secrets.SOROBAN_CONTRACT_ID }}
           SOROBAN_INVOKER_SECRET: ${{ secrets.SOROBAN_INVOKER_SECRET }}
+          # Backfilled Soroban RPC endpoint (e.g. QuickNode / public testnet node
+          # with Protocol 23 retroactive emission enabled). Required for the
+          # backfill replay e2e test (test/integration/backfill.test.ts); the
+          # test self-skips with a clear message when unset.
+          BACKFILL_RPC_URL: ${{ secrets.BACKFILL_RPC_URL }}
         run: pnpm test:integration
         timeout-minutes: 10
 
