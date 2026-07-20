@@ -1,0 +1,30 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "events": [
+      {
+        "type": "contract",
+        "ledger": 3709876,
+        "ledgerClosedAt": "2026-07-20T17:01:12Z",
+        "contractId": "CBJMXTF5BAV7MOFPIUEYXY6DTTNQYUESII3XM4FTVACYNIDB7QPPUDF2",
+        "id": "0015933796092256256-0000000000",
+        "operationIndex": 0,
+        "transactionIndex": 10,
+        "txHash": "529bc71118fd7e99a1c840f9452a1a264b9c006b04bb670aae88f4c19bffdce5",
+        "inSuccessfulContractCall": true,
+        "topic": [
+          "AAAADwAAAA5zZXRfYXV0aG9yaXplZAAA",
+          "AAAAEgAAAAAAAAAAKmq/zTawTdxUytPrzFthfSDK/zSbyJFj4lCFEfrCti0=",
+          "AAAADgAAAD5DQVA2NzpHQVNES0VHVkRaRkY0MjNINE1YMjdVSFpVWDM1UEJRQkpCWlRHQ1M3SVZOVktHMkxRVFZWTzdSNwAA"
+        ],
+        "value": "AAAAAAAAAAE="
+      }
+    ],
+    "cursor": "0015933796092256256-0000000000",
+    "latestLedger": 3709937,
+    "oldestLedger": 3588978,
+    "latestLedgerCloseTime": "1784567178",
+    "oldestLedgerCloseTime": "1783961339"
+  }
+}
