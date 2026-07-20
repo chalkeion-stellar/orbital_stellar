@@ -59,3 +59,13 @@ export type { DiscoverContractSpecOptions, ParsedWasmSpec } from "./discovery/di
 export { fetchContractWasm } from "./discovery/fetchContractCode.js";
 export { parseWasmSpec } from "./discovery/parseContractSpec.js";
 export { UnsupportedSpecTypeError } from "./discovery/xdrToSpec.js";
+
+export { verifySchema } from "./verifySchema.js";
+export type {
+  SchemaVerdict,
+  SchemaMatch,
+  SchemaMismatch,
+  SchemaUnverifiable,
+  SchemaFieldDiff,
+  VerifySchemaOptions,
+} from "./verifySchema.js";
