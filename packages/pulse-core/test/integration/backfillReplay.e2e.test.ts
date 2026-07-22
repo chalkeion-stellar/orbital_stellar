@@ -16,8 +16,7 @@ const START_LEDGER = Number(process.env.BACKFILL_START_LEDGER ?? "0");
 const END_LEDGER = Number(process.env.BACKFILL_END_LEDGER ?? "0");
 const CONTRACT_ID = process.env.BACKFILL_CONTRACT_ID ?? "";
 
-const hasConfig =
-  Boolean(RPC_URL) && START_LEDGER > 0 && END_LEDGER > START_LEDGER;
+const hasConfig = Boolean(RPC_URL) && START_LEDGER > 0 && END_LEDGER > START_LEDGER;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -67,7 +66,10 @@ describe.runIf(shouldRun)("Soroban backfill/replay e2e", () => {
 
       // Wait until the bounded replay run signals completion (endLedger reached
       // or the RPC reports no further events in range).
-      await waitFor(() => (subscriber as unknown as { replayDone?: boolean }).replayDone ?? undefined, 90_000);
+      await waitFor(
+        () => (subscriber as unknown as { replayDone?: boolean }).replayDone ?? undefined,
+        90_000,
+      );
 
       // Even if the window has no events, the run must complete; if it has
       // events, they must be delivered strictly in ascending ledger order.
