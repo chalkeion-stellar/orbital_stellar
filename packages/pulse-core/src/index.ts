@@ -2,11 +2,12 @@ import type { StellarAmount } from "./amount.js";
 import type { AccountAddress, MuxedAddress, ContractAddress } from "./address.js";
 import type { ClaimPredicate } from "./claimPredicate.js";
 
-export { SorobanRpcClient } from "./SorobanRpcClient.js";
+export { SorobanRpcClient, CAP_67_EVENT_TOPICS } from "./SorobanRpcClient.js";
 export type {
   JsonRpcFailure,
   JsonRpcResponse,
   JsonRpcSuccess,
+  PollUnifiedEventsOptions,
   SorobanEventFilter,
   SorobanEventXdrFormat,
   SorobanGetEventsParams,
