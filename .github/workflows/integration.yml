@@ -59,6 +59,15 @@ jobs:
           # test/integration/soroban.test.ts self-skips with a clear message.
           SOROBAN_CONTRACT_ID: ${{ secrets.SOROBAN_CONTRACT_ID }}
           SOROBAN_INVOKER_SECRET: ${{ secrets.SOROBAN_INVOKER_SECRET }}
+          # Backfill/replay e2e (issue #15): a reachable Soroban RPC + a
+          # ledger window with emitted events. Unset until those repo secrets
+          # are added, in which case the live case in
+          # test/integration/backfillReplay.e2e.test.ts self-skips with a
+          # clear message - mirroring the existing soroban.test.ts gating.
+          BACKFILL_RPC_URL: ${{ secrets.BACKFILL_RPC_URL }}
+          BACKFILL_CONTRACT_ID: ${{ secrets.BACKFILL_CONTRACT_ID }}
+          BACKFILL_START_LEDGER: ${{ secrets.BACKFILL_START_LEDGER }}
+          BACKFILL_END_LEDGER: ${{ secrets.BACKFILL_END_LEDGER }}
         run: pnpm test:integration
         timeout-minutes: 10
 
