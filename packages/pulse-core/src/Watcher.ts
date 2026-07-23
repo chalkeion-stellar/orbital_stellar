@@ -17,6 +17,7 @@ import type {
   LiquidityPoolDepositEvent,
   LiquidityPoolWithdrawEvent,
   TrustAuthEvent,
+  AssetClawbackEvent,
   ContractInvokedEvent,
   ContractEmittedEvent,
 } from "./index.js";
@@ -40,6 +41,7 @@ export type WatcherEventMap = {
   "trustline.updated": TrustlineEvent & { readonly timestampDate: Date };
   "trustline.authorized": TrustAuthEvent & { readonly timestampDate: Date };
   "trustline.deauthorized": TrustAuthEvent & { readonly timestampDate: Date };
+  "asset.clawback": AssetClawbackEvent & { readonly timestampDate: Date };
   "offer.created": OfferEvent & { readonly timestampDate: Date };
   "offer.updated": OfferEvent & { readonly timestampDate: Date };
   "offer.deleted": OfferEvent & { readonly timestampDate: Date };

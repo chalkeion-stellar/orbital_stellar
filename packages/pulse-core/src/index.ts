@@ -127,6 +127,13 @@ export type PaymentEventType = "payment.received" | "payment.sent" | "payment.se
 export type AccountOptionsEventType = "account.options_changed";
 export type LiquidityPoolEventType = "lp.deposited" | "lp.withdrawn";
 export type TrustAuthEventType = "trustline.authorized" | "trustline.deauthorized";
+/**
+ * Event type for a CAP-67 unified-stream `clawback` event. Has no
+ * Horizon-derived equivalent in this package's current taxonomy, unlike
+ * `mint`/`burn`, which map onto the existing `payment.received`/`payment.sent`
+ * shape.
+ */
+export type AssetClawbackEventType = "asset.clawback";
 /** Event type for account creation. */
 export type AccountEventType = "account.created";
 export type ClaimableCreatedEventType = "claimable.created";
@@ -393,6 +400,29 @@ export type AccountMergeEvent = {
 };
 
 /**
+ * A normalized CAP-67 unified-stream clawback event. Unlike `mint`/`burn`
+ * (which normalize onto the existing `payment.received`/`payment.sent`
+ * shape for parity with Horizon), clawback has no Horizon-derived
+ * equivalent in this package, so it gets its own taxonomy entry.
+ */
+export type AssetClawbackEvent = {
+  /** The type of clawback event. */
+  type: AssetClawbackEventType;
+  /** The account or muxed account the asset was clawed back from. */
+  from: AccountAddress | MuxedAddress;
+  /** The asset clawed back (e.g. "USDC:GISSUER"). */
+  asset: string;
+  /** The clawed-back amount. */
+  amount: StellarAmount;
+  /** ISO 8601 timestamp of the clawback. */
+  timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
+  /** The original raw record from the unified Soroban event stream. */
+  raw?: RawSorobanEvent;
+};
+
+/**
  * A union of all normalized events supported by pulse-core.
  *
  * This is the broad catch-all type. For precise type narrowing and better
@@ -426,6 +456,7 @@ export type NormalizedEvent = (
   | LiquidityPoolDepositEvent
   | LiquidityPoolWithdrawEvent
   | TrustAuthEvent
+  | AssetClawbackEvent
   | ContractEvent
 ) & {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
