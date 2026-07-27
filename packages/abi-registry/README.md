@@ -73,6 +73,40 @@ const resolver = new ChainedAbiRegistryClient([embeddedSpecReader, registryAttes
 
 An embedded-spec reader's `getSpec` must resolve to `null` for a contract with no embedded spec, not throw - `discoverContractSpec` itself throws `NoEmbeddedSpecError`, so any reader wrapping it for use in a chain is responsible for catching that and returning `null`.
 
+### `signAttestation` / `verifyAttestation`
+
+An attestation (SEP §7.3) claims "this deployed contract emits this event schema." These two functions are the signature envelope around that claim: they don't validate the schema payload itself (that's the separate `attestation.schema.json` deliverable), only who signed the document and whether it's been tampered with since.
+
+```ts
+import { signAttestation, verifyAttestation } from "@orbital-stellar/abi-registry";
+import type { AttestationDocument } from "@orbital-stellar/abi-registry";
+
+const document: AttestationDocument = {
+  contractId: "C...",
+  wasmHash: "…", // hex-encoded SHA-256 of the deployed WASM
+  schema: {
+    /* SEP-48-shaped event definitions */
+  },
+  attester: attesterKeypair.publicKey(), // G...
+  createdAt: new Date().toISOString(),
+};
+
+const envelope = signAttestation(document, attesterKeypair.secret());
+// envelope: { payload, publicKey, signature }
+
+const verdict = verifyAttestation(envelope, { expectedWasmHash: onChainWasmHash });
+// { status: "valid" } | { status: "invalid", reason: string }
+```
+
+`signAttestation` signs `canonicalizeAttestation(document)` - a deterministic, recursively-key-sorted JSON serialization - with the attester's ed25519 keypair, and refuses to sign if `document.attester` doesn't match the signing key's own address.
+
+`verifyAttestation` checks, in order, short-circuiting on the first failure:
+
+1. `envelope.publicKey` is a well-formed Stellar account address (`G...`).
+2. `envelope.publicKey` matches `envelope.payload.attester` - nobody but the claimed attester can produce a valid envelope for a given document.
+3. `envelope.signature` is a valid ed25519 signature by `envelope.publicKey` over the payload's canonical JSON - this is what catches tampering, since changing even one byte of the payload changes its canonical serialization.
+4. If `options.expectedWasmHash` is given (the caller's own on-chain lookup - this module makes no network calls), it matches `envelope.payload.wasmHash`.
+
 ### `RegistryPublisher`
 
 An interface for publishing registry snapshots or derived ABI artifacts.

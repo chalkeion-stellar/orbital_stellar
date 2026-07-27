@@ -69,3 +69,16 @@ export type {
   SchemaFieldDiff,
   VerifySchemaOptions,
 } from "./verifySchema.js";
+
+export {
+  signAttestation,
+  verifyAttestation,
+  canonicalizeAttestation,
+  AttestationSigningError,
+} from "./attestation.js";
+export type {
+  AttestationDocument,
+  AttestationEnvelope,
+  AttestationVerdict,
+  VerifyAttestationOptions,
+} from "./attestation.js";
