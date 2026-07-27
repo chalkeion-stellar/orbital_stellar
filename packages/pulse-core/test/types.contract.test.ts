@@ -100,6 +100,8 @@ describe("Contract Event Types", () => {
           return "claimable";
         case "claimable.claimed":
           return "claimable";
+        case "asset.clawback":
+          return "clawback";
         default: {
           const _exhaustiveCheck: never = event;
           return "unknown";

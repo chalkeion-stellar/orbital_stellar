@@ -11,6 +11,8 @@ import type { SorobanRpcLike, SorobanEvent } from "./SorobanSubscriber.js";
 import { toAccountAddress, toContractAddress } from "./address.js";
 import { toStellarAmount } from "./amount.js";
 import { validateContractFilters } from "./contractFilters.js";
+import { withTimestampDate } from "./timestampDate.js";
+import type { Timestamped } from "./timestampDate.js";
 import type {
   AccountCreatedEvent,
   AccountMergeEvent,
@@ -95,12 +97,6 @@ type NormalizedEventOrPending =
   | ContractInvokedEvent
   | ContractEmittedEvent;
 
-/**
- * Adds the lazy, non-enumerable `timestampDate` getter to an event type.
- * Applied at runtime by {@link withTimestampDate} once an event has been
- * normalized, so every event leaving the engine carries it.
- */
-type Timestamped<T> = T & { readonly timestampDate: Date };
 type Raw<T> = T extends any ? Omit<T, "timestampDate"> : never;
 
 type StreamCallbacks = {
@@ -136,24 +132,6 @@ function stableFilterKey(filters: ContractFilter[]): string {
     topics: f.topics,
   }));
   return JSON.stringify(normalized);
-}
-
-/**
- * Attaches a non-enumerable lazy getter `timestampDate` to an event object.
- * The Date is parsed from `event.timestamp` on first access and cached.
- * JSON.stringify output is unaffected because the property is non-enumerable.
- */
-function withTimestampDate<T extends { timestamp: string }>(event: T): Timestamped<T> {
-  let cached: Date | undefined;
-  Object.defineProperty(event, "timestampDate", {
-    enumerable: false,
-    configurable: true,
-    get(): Date {
-      if (cached === undefined) cached = new Date(event.timestamp);
-      return cached;
-    },
-  });
-  return event as Timestamped<T>;
 }
 
 export class EventEngine {
