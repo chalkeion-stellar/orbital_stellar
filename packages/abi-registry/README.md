@@ -55,6 +55,24 @@ await publisher.publish({
 
 Creates a cached client that fetches contract ABI specs from the configured registry endpoint. Use `getSpec(contractId)` for a single contract or `getSpecs(contractIds)` for batched lookups.
 
+### `ChainedAbiRegistryClient`
+
+Composes multiple `AbiRegistryReader`s (anything with a `getSpec(contractId)`, and optionally a `getSpecAt(contractId, ledger)`) into a single resolution chain: each client is tried in order, and the first non-`null` result wins. Clients after the first are never consulted once one resolves - later entries fill gaps, they don't get a vote once an earlier one has answered.
+
+```ts
+import { ChainedAbiRegistryClient } from "@orbital-stellar/abi-registry";
+
+const resolver = new ChainedAbiRegistryClient([embeddedSpecReader, registryAttestationReader]);
+```
+
+**SEP-48 precedence order.** Per SEP-48's compatibility clause, a contract's own embedded event spec (discovered from its `contractspecv0` WASM section via `discoverContractSpec`) is canonical when present. A registry attestation only fills gaps for contracts with no embedded spec - it never overrides one. A SEP-48-compliant chain must therefore list the embedded-spec reader first and the registry-attestation reader second:
+
+1. **Embedded spec present** - used as-is, even if a registry attestation for the same contract disagrees.
+2. **No embedded spec, registry attestation present** - the attestation is used.
+3. **Neither** - resolution reports unresolved (`null`). There is no silent fallback to bundled/well-known guesses; a caller that wants one must compose it explicitly, after the registry, and can no longer treat the result as SEP-48-verified.
+
+An embedded-spec reader's `getSpec` must resolve to `null` for a contract with no embedded spec, not throw - `discoverContractSpec` itself throws `NoEmbeddedSpecError`, so any reader wrapping it for use in a chain is responsible for catching that and returning `null`.
+
 ### `RegistryPublisher`
 
 An interface for publishing registry snapshots or derived ABI artifacts.
