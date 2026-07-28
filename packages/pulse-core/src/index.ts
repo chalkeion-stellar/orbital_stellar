@@ -612,6 +612,56 @@ export type CoreConfig = {
   soroban?: SorobanConfig;
 };
 
+/**
+ * The event families this package's `NormalizedEvent` taxonomy is grouped
+ * into for transport-routing purposes (see {@link resolveFamilyTransport}).
+ * Every family corresponds to one or more Horizon operation types; `payment`
+ * and `trustlineAuth` are the only ones with a CAP-67 unified equivalent
+ * today (transfer/mint/burn/clawback, and set_authorized, respectively) -
+ * every other family has no unified equivalent per the CAP-67 mapping design
+ * doc (`docs/design/cap67-mapping.md`) and stays Horizon-only regardless of
+ * ingestion mode.
+ */
+export type EventFamily =
+  | "payment"
+  | "trustlineAuth"
+  | "trustlineLimit"
+  | "accountCreated"
+  | "accountOptions"
+  | "accountMerge"
+  | "offer"
+  | "bumpSequence"
+  | "manageData"
+  | "claimableBalance"
+  | "liquidityPool";
+
+/** Event families with a CAP-67 unified-stream equivalent per the mapping design doc. */
+const UNIFIED_EQUIVALENT_FAMILIES: ReadonlySet<EventFamily> = new Set<EventFamily>([
+  "payment",
+  "trustlineAuth",
+]);
+
+/**
+ * Decides which transport should serve a given event family under a given
+ * effective mode (`"unified"` or `"horizon"` - resolving what mode is
+ * actually in effect, e.g. for an `"auto"`-style setting, is left to the
+ * caller). Pure and total: safe to call for every family without touching
+ * any engine state.
+ *
+ * This is the routing *decision* only. A family resolving to `"unified"`
+ * here reflects the CAP-67 mapping design doc's target architecture; whether
+ * an `EventEngine` actually stops delivering that family via Horizon and
+ * starts delivering it via the unified stream additionally depends on a
+ * working decoder/normalizer existing for it.
+ */
+export function resolveFamilyTransport(
+  family: EventFamily,
+  effectiveMode: "unified" | "horizon",
+): "unified" | "horizon" {
+  if (effectiveMode === "horizon") return "horizon";
+  return UNIFIED_EQUIVALENT_FAMILIES.has(family) ? "unified" : "horizon";
+}
+
 // Error class for invalid network validation
 export class UnknownNetworkError extends Error {
   constructor(network: string) {
