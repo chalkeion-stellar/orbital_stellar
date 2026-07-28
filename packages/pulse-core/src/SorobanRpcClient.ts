@@ -78,6 +78,25 @@ export interface PollUnifiedEventsOptions {
   maxRetries?: number;
   initialBackoffMs?: number;
   maxBackoffMs?: number;
+  /**
+   * Called just before each retry backoff sleep, after a retryable
+   * `getEvents` failure. Lets a caller (e.g. `EventEngine`) surface
+   * reconnect/rate-limit lifecycle notifications without duplicating this
+   * loop's retry bookkeeping.
+   */
+  onRetry?: (info: { attempt: number; delayMs: number; rateLimited: boolean }) => void;
+  /**
+   * Called once a poll succeeds after one or more retries, before the
+   * internal attempt counter resets. Not called on the very first successful
+   * poll of a session (there was nothing to recover from).
+   */
+  onRecovered?: (info: { attempt: number }) => void;
+  /**
+   * Called after each successful page with an advanced cursor, so a caller
+   * can persist progress incrementally instead of only learning the final
+   * cursor once the whole loop returns (e.g. on `stop()`).
+   */
+  onCursor?: (cursor: string) => void;
 }
 
 /** Per-call options for {@link SorobanRpcClient.getEvents}. */
@@ -543,13 +562,19 @@ export class SorobanRpcClient {
 
         const result = await this.getEvents(params);
 
+        if (attempt > 0) {
+          options?.onRecovered?.({ attempt });
+        }
         attempt = 0;
 
         if (result.events.length > 0) {
           onEvents(result.events);
         }
 
-        cursor = result.cursor ?? cursor;
+        if (result.cursor !== undefined) {
+          cursor = result.cursor;
+          options?.onCursor?.(cursor);
+        }
 
         if (result.events.length < pageLimit) {
           await sleep(2_000, signal);
@@ -569,6 +594,7 @@ export class SorobanRpcClient {
             delayMs,
             code: err.code,
           });
+          options?.onRetry?.({ attempt, delayMs, rateLimited: err.code === "rate_limit" });
 
           await sleep(delayMs, signal);
         } else if (isAbortError(err)) {
