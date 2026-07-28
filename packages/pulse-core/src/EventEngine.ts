@@ -3,7 +3,11 @@ import { createDefaultAbiRegistryClient, decodeContractEvent } from "@orbital-st
 import type { ContractSpec, XdrContractSpec } from "@orbital-stellar/abi-registry";
 import { Watcher } from "./Watcher.js";
 import { fullJitterBackoffMs } from "./backoff.js";
-import { EngineAlreadyStartedError, NetworkMismatchError } from "./errors.js";
+import {
+  EngineAlreadyStartedError,
+  InvalidIngestionModeError,
+  NetworkMismatchError,
+} from "./errors.js";
 import { resolveSorobanPageLimit, SorobanSubscriber } from "./SorobanSubscriber.js";
 import { SorobanRpcClient } from "./SorobanRpcClient.js";
 import type { SorobanNetworkInfo } from "./SorobanRpcClient.js";
@@ -31,6 +35,7 @@ import type {
   DataEventType,
   EngineStatus,
   HealthCheckResult,
+  IngestionMode,
   LiquidityPoolDepositEvent,
   LiquidityPoolReserve,
   LiquidityPoolWithdrawEvent,
@@ -118,6 +123,11 @@ const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
 };
 
 const STELLAR_MAX_TRUSTLINE_LIMIT = "922337203685.4775807";
+
+/** Protocol version CAP-67 activated at - `"auto"` ingestion mode treats an RPC reporting at least this as unified-capable. */
+const CAP_67_MIN_PROTOCOL_VERSION = 23;
+
+const VALID_INGESTION_MODES: readonly IngestionMode[] = ["unified", "horizon", "auto"];
 
 const noop: Logger = { info: () => {}, warn: () => {}, error: () => {} };
 
@@ -211,6 +221,14 @@ export class EventEngine {
   private unifiedRunning = false;
   private unifiedLastEventAt: string | null = null;
   private unifiedCursorKey = "";
+  /** The configured value of `CoreConfig.ingestion`. Validated in the constructor. */
+  private ingestion: IngestionMode = "horizon";
+  /**
+   * Protocol version reported by the configured Soroban RPC's `getNetwork()`,
+   * once the constructor's probe (or any later `getNetwork()` call) resolves.
+   * Drives `"auto"` ingestion mode's unified-vs-horizon resolution.
+   */
+  private sorobanProtocolVersion?: number;
   /** Optional ABI registry used to enrich `contract.emitted` events with `decodedData`. */
   private abiRegistry?: AbiRegistryClientLike;
   /**
@@ -229,6 +247,12 @@ export class EventEngine {
    * @param config - The core configuration for the engine.
    */
   constructor(config: CoreConfig) {
+    const ingestion = config.ingestion ?? "horizon";
+    if (!VALID_INGESTION_MODES.includes(ingestion)) {
+      throw new InvalidIngestionModeError(ingestion);
+    }
+    this.ingestion = ingestion;
+
     this.sorobanPageLimit = resolveSorobanPageLimit(config.soroban?.pageLimit);
 
     if (Array.isArray(config.network)) {
@@ -285,12 +309,18 @@ export class EventEngine {
         headers: config.soroban.rpcHeaders,
         logger: this.log,
       });
-      this.sorobanNetworkReady = rpc.getNetwork().catch((err: unknown) => {
-        this.log.warn("[pulse-core] failed to warm Soroban RPC network cache", {
-          error: err instanceof Error ? err.message : String(err),
+      this.sorobanNetworkReady = rpc
+        .getNetwork()
+        .then((info) => {
+          this.sorobanProtocolVersion = info.protocolVersion;
+          return info;
+        })
+        .catch((err: unknown) => {
+          this.log.warn("[pulse-core] failed to warm Soroban RPC network cache", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return undefined;
         });
-        return undefined;
-      });
       const sorobanCursorKey = config.streamKey
         ? `${config.streamKey}:soroban`
         : `soroban:${config.network}`;
@@ -395,6 +425,7 @@ export class EventEngine {
         cursorFailureThreshold: config.cursorFailureThreshold,
         abiRegistry: config.abiRegistry,
         streamKey: config.streamKey ? `${config.streamKey}:${source.network}` : undefined,
+        ingestion: config.ingestion,
       });
       networkSources.set(source.network, subEngine);
     }
@@ -1116,6 +1147,28 @@ export class EventEngine {
       });
   }
 
+  /**
+   * Resolves `this.ingestion` to the transport it actually means right now:
+   * `"unified"`/`"horizon"` pass through unchanged; `"auto"` resolves to
+   * `"unified"` once the configured Soroban RPC has been probed (via
+   * `getNetwork()`) as running at least {@link CAP_67_MIN_PROTOCOL_VERSION},
+   * and to `"horizon"` otherwise (including while the probe is still
+   * in-flight, or when no `soroban` config was given at all) - conservative
+   * by design, since `"horizon"` is always safe.
+   */
+  private effectiveIngestion(): "unified" | "horizon" {
+    if (this.ingestion === "horizon") return "horizon";
+    if (this.ingestion === "unified") return "unified";
+    // "auto"
+    if (
+      this.sorobanProtocolVersion !== undefined &&
+      this.sorobanProtocolVersion >= CAP_67_MIN_PROTOCOL_VERSION
+    ) {
+      return "unified";
+    }
+    return "horizon";
+  }
+
   private async resolveUnifiedCursor(): Promise<string | undefined> {
     if (!this.cursorStore) return undefined;
     try {
@@ -1154,6 +1207,7 @@ export class EventEngine {
       let sorobanRunning = false;
       let unifiedRunning = false;
       let horizonReconnectAttempt = 0;
+      let anyEffectiveUnified = false;
       const lastEventAt: string[] = [];
       const horizonLastEventAt: string[] = [];
       const sorobanLastEventAt: string[] = [];
@@ -1168,6 +1222,7 @@ export class EventEngine {
         reconnectAttempt = Math.max(reconnectAttempt, subStatus.reconnectAttempt);
         if (subStatus.lastEventAt) lastEventAt.push(subStatus.lastEventAt);
         subStatus.pausedSources?.forEach((source) => pausedSources.add(source));
+        anyEffectiveUnified = anyEffectiveUnified || subStatus.effectiveIngestion === "unified";
 
         horizonRunning = horizonRunning || subStatus.sources.horizon.running;
         sorobanRunning = sorobanRunning || subStatus.sources.soroban.running;
@@ -1196,6 +1251,8 @@ export class EventEngine {
           : null,
         reconnectAttempt,
         pausedSources: pausedSources.size > 0 ? Array.from(pausedSources) : undefined,
+        ingestion: this.ingestion,
+        effectiveIngestion: anyEffectiveUnified ? "unified" : "horizon",
         sources: {
           horizon: {
             running: horizonRunning,
@@ -1254,6 +1311,8 @@ export class EventEngine {
       lastEventAt: lastEventAt.length ? (lastEventAt.sort()[lastEventAt.length - 1] ?? null) : null,
       reconnectAttempt: Math.max(horizon.reconnectAttempt, soroban.reconnectAttempt),
       pausedSources: this.pausedSources.size > 0 ? Array.from(this.pausedSources) : undefined,
+      ingestion: this.ingestion,
+      effectiveIngestion: this.effectiveIngestion(),
       sources,
     };
   }
