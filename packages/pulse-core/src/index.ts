@@ -42,11 +42,7 @@ export {
   toMuxedAddress,
   toContractAddress,
 } from "./address.js";
-export {
-  EngineAlreadyStartedError,
-  HorizonStreamError,
-  InvalidIngestionModeError,
-} from "./errors.js";
+export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
 export type { CursorStoreLike } from "./CursorStore.js";
@@ -107,15 +103,6 @@ export type EngineStatus = {
   lastEventAt: string | null;
   reconnectAttempt: number;
   pausedSources?: ("horizon" | "soroban")[];
-  /** The configured value of `CoreConfig.ingestion` (default `"horizon"`). */
-  ingestion: IngestionMode;
-  /**
-   * The transport `ingestion` actually resolves to right now. Equal to
-   * `ingestion` for `"unified"`/`"horizon"`; for `"auto"` this reflects
-   * whether the configured Soroban RPC has been probed as CAP-67-capable
-   * (`"unified"`) or not yet determined / unsupported (`"horizon"`).
-   */
-  effectiveIngestion: "unified" | "horizon";
   sources: {
     horizon: SourceStatus;
     soroban: SourceStatus;
@@ -623,24 +610,7 @@ export type CoreConfig = {
   abiRegistry?: AbiRegistryClientLike | false;
   /** Soroban RPC configuration. Ignored when `network` is an array - set `soroban` per source instead. */
   soroban?: SorobanConfig;
-  /**
-   * Which transport serves which events. `"horizon"` (default) preserves
-   * pre-Wave-1.6 behavior exactly - zero change until a consumer opts in.
-   * `"unified"` prefers the CAP-67 unified stream for event families that
-   * have a unified equivalent (see {@link resolveFamilyTransport}).
-   * `"auto"` behaves like `"unified"` when the configured Soroban RPC
-   * reports a protocol version that supports CAP-67, and like `"horizon"`
-   * otherwise. Throws {@link InvalidIngestionModeError} for any other value.
-   *
-   * This flag only selects a transport; it does not by itself change what
-   * gets delivered - routed families still require the corresponding
-   * unified decoder/normalizer to be wired in to actually take effect.
-   */
-  ingestion?: IngestionMode;
 };
-
-/** Valid values for {@link CoreConfig.ingestion}. */
-export type IngestionMode = "unified" | "horizon" | "auto";
 
 /**
  * The event families this package's `NormalizedEvent` taxonomy is grouped
@@ -673,15 +643,16 @@ const UNIFIED_EQUIVALENT_FAMILIES: ReadonlySet<EventFamily> = new Set<EventFamil
 
 /**
  * Decides which transport should serve a given event family under a given
- * *effective* mode (i.e. `"auto"` already resolved to `"unified"` or
- * `"horizon"` - see `EngineStatus.effectiveIngestion`). Pure and total: safe
- * to call for every family without touching any engine state.
+ * effective mode (`"unified"` or `"horizon"` - resolving what mode is
+ * actually in effect, e.g. for an `"auto"`-style setting, is left to the
+ * caller). Pure and total: safe to call for every family without touching
+ * any engine state.
  *
  * This is the routing *decision* only. A family resolving to `"unified"`
  * here reflects the CAP-67 mapping design doc's target architecture; whether
  * an `EventEngine` actually stops delivering that family via Horizon and
  * starts delivering it via the unified stream additionally depends on a
- * working decoder/normalizer existing for it (see `CoreConfig.ingestion`).
+ * working decoder/normalizer existing for it.
  */
 export function resolveFamilyTransport(
   family: EventFamily,
