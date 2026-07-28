@@ -63,6 +63,8 @@ export { InMemoryRegistryStore } from "./IRegistryStore.js";
 export { FileRegistryStore } from "./FileRegistryStore.js";
 
 export { isEventType } from "./eventTypeGuard.js";
+export { deriveDedupeKey, DedupeWindow, InvalidDedupeWindowCapacityError } from "./dedupe.js";
+export type { DedupeEventRef } from "./dedupe.js";
 export * from "./claimPredicate.js";
 export * from "./raw-horizon.js";
 export * from "./raw-soroban.js";
