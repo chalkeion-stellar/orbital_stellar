@@ -106,6 +106,8 @@ export type EngineStatus = {
   sources: {
     horizon: SourceStatus;
     soroban: SourceStatus;
+    /** The CAP-67 unified event poller (see `SorobanConfig.unifiedEvents`). */
+    unified: SourceStatus;
   };
   /**
    * Present only when the engine was constructed with an array of network
@@ -113,7 +115,9 @@ export type EngineStatus = {
    * breakdown of `sources`. `sources` above is an aggregate across all
    * configured networks for consumers that don't need the per-network detail.
    */
-  networks?: Partial<Record<Network, { horizon: SourceStatus; soroban: SourceStatus }>>;
+  networks?: Partial<
+    Record<Network, { horizon: SourceStatus; soroban: SourceStatus; unified: SourceStatus }>
+  >;
 };
 
 /** Passphrase strings for each supported Stellar network. */
@@ -486,7 +490,7 @@ export type WatcherNotification = {
   /** The cursor position at the time of failure (for "engine.reconnecting" events). */
   cursor?: string;
   /** The source that triggered this notification. */
-  source?: "horizon" | "soroban";
+  source?: "horizon" | "soroban" | "unified";
   /** ISO 8601 timestamp of when this notification was emitted. */
   emittedAt: string;
   /** The cursor value that was expired or lost, if applicable. */
@@ -549,6 +553,15 @@ export type SorobanConfig = {
    * Must be an integer from 1 through 10,000. Defaults to 100.
    */
   pageLimit?: number;
+  /**
+   * Opt into the CAP-67 unified event poller (`SorobanRpcClient.pollUnifiedEvents`) -
+   * a first-class transport, started/stopped alongside Horizon SSE and the
+   * contract-filter `SorobanSubscriber`, that polls the same RPC endpoint for
+   * classic-asset `transfer`/`mint`/`burn`/`clawback` events. Off by default.
+   * Decoding, normalizing, and dispatching those events to watchers is not
+   * yet wired - only the transport's start/stop/status/reconnect lifecycle is.
+   */
+  unifiedEvents?: boolean;
 };
 
 /**
