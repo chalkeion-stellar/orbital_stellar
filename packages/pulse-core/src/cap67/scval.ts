@@ -57,6 +57,76 @@ export function decodeI128(
   return native;
 }
 
+/** Decodes topic `index` as a Symbol and asserts it equals `expectedSymbol`. */
+export function decodeSymbolTopic(
+  topic: string,
+  index: number,
+  expectedSymbol: string,
+  makeError: (reason: string) => Error,
+): void {
+  const scVal = decodeTopicScVal(topic, index, makeError);
+  let symbol: unknown;
+  try {
+    symbol = scValToNative(scVal);
+  } catch (cause) {
+    throw makeError(`malformed topic[${index}] symbol: ${String(cause)}`);
+  }
+  if (symbol !== expectedSymbol) {
+    throw makeError(
+      `expected topic[${index}] to be "${expectedSymbol}", got ${JSON.stringify(symbol)}`,
+    );
+  }
+}
+
+/** Decodes topic `index` as a plain string (e.g. an asset in `CODE:ISSUER` form). */
+export function decodeStringTopic(
+  topic: string,
+  index: number,
+  makeError: (reason: string) => Error,
+): string {
+  const scVal = decodeTopicScVal(topic, index, makeError);
+  let value: unknown;
+  try {
+    value = scValToNative(scVal);
+  } catch (cause) {
+    throw makeError(`malformed topic[${index}]: ${String(cause)}`);
+  }
+  if (typeof value !== "string") {
+    throw makeError(`expected topic[${index}] to be a string, got ${typeof value}`);
+  }
+  return value;
+}
+
+/** Decodes a raw event's `value` field (base64 XDR) into an `xdr.ScVal`. */
+export function decodeEventValueScVal(
+  event: Pick<RawSorobanEvent, "value">,
+  makeError: (reason: string) => Error,
+): xdr.ScVal {
+  if (typeof event.value !== "string") {
+    throw makeError("expected event value to be a base64 XDR string");
+  }
+  try {
+    return xdr.ScVal.fromXDR(event.value, "base64");
+  } catch (cause) {
+    throw makeError(`malformed value XDR: ${String(cause)}`);
+  }
+}
+
+export function decodeBool(
+  scVal: xdr.ScVal,
+  context: string,
+  makeError: (reason: string) => Error,
+): boolean {
+  if (scVal.switch() !== xdr.ScValType.scvBool()) {
+    throw makeError(`expected ${context} to be a bool, got ${scVal.switch().name}`);
+  }
+  const native = scValToNative(scVal);
+  if (typeof native !== "boolean") {
+    throw makeError(`expected ${context} to decode to a boolean, got ${typeof native}`);
+  }
+  return native;
+}
+
 /** Typed result of decoding a CAP-67 event shaped `[symbol, address, asset]` with an `i128` value. */
 export interface SingleAddressAssetEvent {
   address: StellarAddress;

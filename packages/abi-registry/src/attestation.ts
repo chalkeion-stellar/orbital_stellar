@@ -1,36 +1,15 @@
 /**
- * Signing and verification for attestation documents (issue #20 / SEP §7.3):
+ * Signing and verification for attestation documents (issue #21 / SEP §7.4):
  * "here is the event schema this deployed contract actually emits, attested
  * by X". This module only concerns itself with the signature envelope -
  * proving who signed a given document and that it hasn't been tampered with
- * since. It defines a minimal `AttestationDocument` shape (contract ID, WASM
- * hash, schema payload, attester, timestamps) sufficient to build and verify
- * that envelope; the canonical, published JSON Schema for the document body
- * itself is #20's separate deliverable and may supersede the shape here once
- * it lands.
+ * since. The document shape itself (`AttestationDocument`) is #20's
+ * deliverable, imported from `types.ts`; everything here is shape-agnostic
+ * (it only reads `attester` and `wasmHash` directly, and otherwise treats
+ * the document as an opaque value to canonicalize/sign/verify).
  */
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
-
-/**
- * The document an attester signs: a claim about what event schema a deployed
- * contract emits, plus enough metadata to scope, date, and expire that claim.
- */
-export interface AttestationDocument {
-  /** The attested contract's address (`C...`). */
-  contractId: string;
-  /** Hex-encoded SHA-256 hash of the contract's deployed WASM bytecode. */
-  wasmHash: string;
-  /** The SEP-48-shaped event schema being attested to. Opaque here - validated against #20's schema separately. */
-  schema: unknown;
-  /** The attester's Stellar account address (`G...`). Must match the envelope's signing key. */
-  attester: string;
-  /** ISO 8601 timestamp of when the attestation was made. */
-  createdAt: string;
-  /** ISO 8601 expiry timestamp, if the attestation is time-limited. */
-  expiresAt?: string;
-  /** Hash of a prior attestation this one supersedes, if any. */
-  supersedes?: string;
-}
+import type { AttestationDocument } from "./types.js";
 
 /** An {@link AttestationDocument} bundled with proof of who signed it. */
 export interface AttestationEnvelope {

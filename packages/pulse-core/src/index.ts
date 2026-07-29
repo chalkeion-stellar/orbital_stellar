@@ -211,6 +211,12 @@ export type PaymentEvent = {
   asset: string;
   /** ISO 8601 timestamp of the payment. */
   timestamp: string;
+  /**
+   * The originating transaction's memo, when present. Only ever set by the
+   * CAP-67 unified transport today (from a transfer event's map-based data
+   * form) - Horizon-sourced payments don't populate this.
+   */
+  memo?: string;
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
