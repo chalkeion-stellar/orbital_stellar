@@ -83,7 +83,6 @@ export {
   AttestationSigningError,
 } from "./attestation.js";
 export type {
-  AttestationDocument,
   AttestationEnvelope,
   AttestationVerdict,
   VerifyAttestationOptions,
