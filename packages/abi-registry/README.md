@@ -119,6 +119,58 @@ Reference publisher that writes registry output to the local filesystem. Useful 
 
 Helpers for converting between JavaScript values and Soroban `ScVal` payloads.
 
+## CLI
+
+### `abi-registry verify <contractId> --schema <file>`
+
+The one-command form of `verifySchema`: reads a submitted schema off disk, compares it against the deployed contract's on-chain spec, and prints the structured verdict.
+
+```bash
+abi-registry verify CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75 \
+  --schema specs/well-known/usdc.json \
+  --network mainnet
+```
+
+```
+✗ mismatch  CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75
+  1 difference(s) between the submitted schema and the on-chain spec:
+
+  - functions[transfer].returns
+      submitted: "void"
+      on-chain:  "u32"
+```
+
+`--schema` accepts either the canonical `ContractSpec` shape or the hand-authored snake_case well-known format, so the bundled specs in `specs/well-known/` can be passed straight through. The file is validated with `validateSpec` before any network call, so a malformed schema fails fast rather than being reported as a mismatch.
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--schema <file>` | *(required)* | Submitted schema to verify |
+| `--rpc-url <url>` | `https://soroban-testnet.stellar.org` | Soroban RPC endpoint |
+| `--network <name>` | `testnet` | `mainnet` \| `testnet` \| `futurenet` |
+| `--json` | `false` | Print the verdict as JSON instead of text |
+| `--allow-unverifiable` | `false` | Exit `0` instead of `2` when the contract has no embedded spec |
+
+`--json` prints the verdict verbatim, plus the contract ID, for machine consumption:
+
+```json
+{
+  "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+  "status": "mismatch",
+  "diffs": [{ "path": "functions[transfer].returns", "submitted": "void", "onChain": "u32" }]
+}
+```
+
+**Exit codes.** Distinct per outcome, so CI can gate on the specific one it cares about rather than only on "non-zero":
+
+| Code | Meaning |
+| --- | --- |
+| `0` | `match` - submitted schema matches the on-chain spec |
+| `1` | `mismatch` - the schema disagrees with the on-chain spec |
+| `2` | `unverifiable` - contract has no embedded spec, so nothing could be compared (see `--allow-unverifiable`) |
+| `3` | Bad usage, unreadable/invalid schema file, or an RPC failure |
+
+Note that Stellar Asset Contracts (USDC, EURC, AQUA, the native XLM wrapper) have no WASM and therefore no embedded `contractspecv0` section - verifying one reports `unverifiable`, not `mismatch`. Only contracts built from Rust with their spec section intact can be verified.
+
 ## Related documents
 
 - [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) - where the registry sits in the system map
