@@ -67,6 +67,8 @@ export { InMemoryRegistryStore } from "./IRegistryStore.js";
 export { FileRegistryStore } from "./FileRegistryStore.js";
 
 export { isEventType } from "./eventTypeGuard.js";
+export { deriveDedupeKey, DedupeWindow, InvalidDedupeWindowCapacityError } from "./dedupe.js";
+export type { DedupeEventRef } from "./dedupe.js";
 export * from "./claimPredicate.js";
 export * from "./raw-horizon.js";
 export * from "./raw-soroban.js";
@@ -112,6 +114,8 @@ export type EngineStatus = {
   sources: {
     horizon: SourceStatus;
     soroban: SourceStatus;
+    /** The CAP-67 unified event poller (see `SorobanConfig.unifiedEvents`). */
+    unified: SourceStatus;
   };
   /**
    * Present only when the engine was constructed with an array of network
@@ -119,7 +123,9 @@ export type EngineStatus = {
    * breakdown of `sources`. `sources` above is an aggregate across all
    * configured networks for consumers that don't need the per-network detail.
    */
-  networks?: Partial<Record<Network, { horizon: SourceStatus; soroban: SourceStatus }>>;
+  networks?: Partial<
+    Record<Network, { horizon: SourceStatus; soroban: SourceStatus; unified: SourceStatus }>
+  >;
 };
 
 /** Passphrase strings for each supported Stellar network. */
@@ -211,6 +217,12 @@ export type PaymentEvent = {
   asset: string;
   /** ISO 8601 timestamp of the payment. */
   timestamp: string;
+  /**
+   * The originating transaction's memo, when present. Only ever set by the
+   * CAP-67 unified transport today (from a transfer event's map-based data
+   * form) - Horizon-sourced payments don't populate this.
+   */
+  memo?: string;
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
   /** The original raw record from the Horizon API. */
@@ -492,7 +504,7 @@ export type WatcherNotification = {
   /** The cursor position at the time of failure (for "engine.reconnecting" events). */
   cursor?: string;
   /** The source that triggered this notification. */
-  source?: "horizon" | "soroban";
+  source?: "horizon" | "soroban" | "unified";
   /** ISO 8601 timestamp of when this notification was emitted. */
   emittedAt: string;
   /** The cursor value that was expired or lost, if applicable. */
@@ -555,6 +567,15 @@ export type SorobanConfig = {
    * Must be an integer from 1 through 10,000. Defaults to 100.
    */
   pageLimit?: number;
+  /**
+   * Opt into the CAP-67 unified event poller (`SorobanRpcClient.pollUnifiedEvents`) -
+   * a first-class transport, started/stopped alongside Horizon SSE and the
+   * contract-filter `SorobanSubscriber`, that polls the same RPC endpoint for
+   * classic-asset `transfer`/`mint`/`burn`/`clawback` events. Off by default.
+   * Decoding, normalizing, and dispatching those events to watchers is not
+   * yet wired - only the transport's start/stop/status/reconnect lifecycle is.
+   */
+  unifiedEvents?: boolean;
 };
 
 /**
@@ -619,6 +640,56 @@ export type CoreConfig = {
 
 /** Valid values for {@link CoreConfig.ingestion}. */
 export type IngestionMode = "unified" | "horizon" | "auto";
+
+/**
+ * The event families this package's `NormalizedEvent` taxonomy is grouped
+ * into for transport-routing purposes (see {@link resolveFamilyTransport}).
+ * Every family corresponds to one or more Horizon operation types; `payment`
+ * and `trustlineAuth` are the only ones with a CAP-67 unified equivalent
+ * today (transfer/mint/burn/clawback, and set_authorized, respectively) -
+ * every other family has no unified equivalent per the CAP-67 mapping design
+ * doc (`docs/design/cap67-mapping.md`) and stays Horizon-only regardless of
+ * ingestion mode.
+ */
+export type EventFamily =
+  | "payment"
+  | "trustlineAuth"
+  | "trustlineLimit"
+  | "accountCreated"
+  | "accountOptions"
+  | "accountMerge"
+  | "offer"
+  | "bumpSequence"
+  | "manageData"
+  | "claimableBalance"
+  | "liquidityPool";
+
+/** Event families with a CAP-67 unified-stream equivalent per the mapping design doc. */
+const UNIFIED_EQUIVALENT_FAMILIES: ReadonlySet<EventFamily> = new Set<EventFamily>([
+  "payment",
+  "trustlineAuth",
+]);
+
+/**
+ * Decides which transport should serve a given event family under a given
+ * effective mode (`"unified"` or `"horizon"` - resolving what mode is
+ * actually in effect, e.g. for an `"auto"`-style setting, is left to the
+ * caller). Pure and total: safe to call for every family without touching
+ * any engine state.
+ *
+ * This is the routing *decision* only. A family resolving to `"unified"`
+ * here reflects the CAP-67 mapping design doc's target architecture; whether
+ * an `EventEngine` actually stops delivering that family via Horizon and
+ * starts delivering it via the unified stream additionally depends on a
+ * working decoder/normalizer existing for it.
+ */
+export function resolveFamilyTransport(
+  family: EventFamily,
+  effectiveMode: "unified" | "horizon",
+): "unified" | "horizon" {
+  if (effectiveMode === "horizon") return "horizon";
+  return UNIFIED_EQUIVALENT_FAMILIES.has(family) ? "unified" : "horizon";
+}
 
 // Error class for invalid network validation
 export class UnknownNetworkError extends Error {

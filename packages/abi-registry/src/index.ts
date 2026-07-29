@@ -2,7 +2,13 @@ export { AbiRegistryClient } from "./AbiRegistryClient.js";
 export { scvalToJs, jsToScval } from "./scval.js";
 export { RegistryPublisher } from "./RegistryPublisher.js";
 
-export type { AbiRegistryClientConfig, XdrContractSpec } from "./types.js";
+export type {
+  AbiRegistryClientConfig,
+  XdrContractSpec,
+  AttestationDocument,
+  AttestationValidationResult,
+} from "./types.js";
+export { validateAttestationDocument } from "./types.js";
 
 export type {
   ContractSpec,
@@ -69,3 +75,15 @@ export type {
   SchemaFieldDiff,
   VerifySchemaOptions,
 } from "./verifySchema.js";
+
+export {
+  signAttestation,
+  verifyAttestation,
+  canonicalizeAttestation,
+  AttestationSigningError,
+} from "./attestation.js";
+export type {
+  AttestationEnvelope,
+  AttestationVerdict,
+  VerifyAttestationOptions,
+} from "./attestation.js";

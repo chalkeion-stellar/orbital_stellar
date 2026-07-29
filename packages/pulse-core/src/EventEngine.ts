@@ -207,6 +207,19 @@ export class EventEngine {
    * Resolves to `undefined` (with a warning logged) if the probe fails.
    */
   private sorobanNetworkReady?: Promise<SorobanNetworkInfo | undefined>;
+  /**
+   * RPC client used by the CAP-67 unified event poller. Wired only when
+   * `config.soroban.unifiedEvents` is set; shares its network-mismatch probe
+   * with `sorobanNetworkReady` when both features are configured.
+   */
+  private unifiedRpc?: SorobanRpcClient;
+  /** Aborted on `stop()` to cancel the in-flight `pollUnifiedEvents` loop. */
+  private unifiedController?: AbortController;
+  /** Resolves once the unified poller's loop has fully exited after `stop()` aborts it. */
+  private unifiedPollPromise?: Promise<{ cursor: string | undefined }>;
+  private unifiedRunning = false;
+  private unifiedLastEventAt: string | null = null;
+  private unifiedCursorKey = "";
   /** Optional ABI registry used to enrich `contract.emitted` events with `decodedData`. */
   private abiRegistry?: AbiRegistryClientLike;
   /**
@@ -326,6 +339,13 @@ export class EventEngine {
         pageLimit: config.soroban.pageLimit,
         onEvent: async (event) => this.handleSorobanEvent(event),
       });
+
+      if (config.soroban.unifiedEvents) {
+        this.unifiedRpc = rpc;
+        this.unifiedCursorKey = config.streamKey
+          ? `${config.streamKey}:unified`
+          : `unified:${config.network}`;
+      }
     }
   }
 
@@ -840,35 +860,54 @@ export class EventEngine {
 
     this.openStream(false);
     if (this.sorobanSubscriber) {
-      if (cachedNetwork || !this.sorobanNetworkReady) {
-        // Already verified above (cache was warm), or no in-flight probe to wait on.
-        this.sorobanSubscriber.start();
-      } else {
-        // The constructor's getNetwork() probe hasn't resolved yet. Defer opening
-        // the Soroban subscriber until it settles so a mismatch is caught before
-        // any polling begins, instead of silently processing wrong-network events.
-        const subscriber = this.sorobanSubscriber;
-        const startGeneration = this.stopGeneration;
-        void this.sorobanNetworkReady.then((info) => {
-          // Bail if stop() was called while the probe was in flight. Unlike
-          // `isRunning`, this isn't perturbed by unrelated Horizon reconnects.
-          if (this.stopGeneration !== startGeneration) return;
-          if (info) {
-            const expected = NETWORK_PASSPHRASES[this.network];
-            if (info.passphrase !== expected) {
-              this.log.error(
-                "[pulse-core] Soroban RPC network mismatch detected after start(); stopping engine.",
-                { expected, actual: info.passphrase },
-              );
-              this.stop();
-              return;
-            }
-          }
-          subscriber.start();
-        });
-      }
+      const subscriber = this.sorobanSubscriber;
+      this.runAfterNetworkVerified(cachedNetwork, () => subscriber.start());
+    }
+    if (this.unifiedRpc) {
+      this.runAfterNetworkVerified(cachedNetwork, () => this.startUnifiedPoller());
     }
     return true;
+  }
+
+  /**
+   * Runs `onVerified` once the Soroban RPC's network passphrase is confirmed
+   * to match this engine's configured network - immediately if already
+   * verified (`cachedNetwork` warm), or after the constructor's `getNetwork()`
+   * probe settles otherwise. Calls `stop()` instead of `onVerified` if a
+   * mismatch is found. Shared by the Soroban subscriber and unified poller
+   * startup paths in `start()`, since both sit behind the same probe.
+   */
+  private runAfterNetworkVerified(
+    cachedNetwork: SorobanNetworkInfo | null | undefined,
+    onVerified: () => void,
+  ): void {
+    if (cachedNetwork || !this.sorobanNetworkReady) {
+      // Already verified above (cache was warm), or no in-flight probe to wait on.
+      onVerified();
+      return;
+    }
+
+    // The constructor's getNetwork() probe hasn't resolved yet. Defer until it
+    // settles so a mismatch is caught before any polling begins, instead of
+    // silently processing wrong-network events.
+    const startGeneration = this.stopGeneration;
+    void this.sorobanNetworkReady.then((info) => {
+      // Bail if stop() was called while the probe was in flight. Unlike
+      // `isRunning`, this isn't perturbed by unrelated Horizon reconnects.
+      if (this.stopGeneration !== startGeneration) return;
+      if (info) {
+        const expected = NETWORK_PASSPHRASES[this.network];
+        if (info.passphrase !== expected) {
+          this.log.error(
+            "[pulse-core] Soroban RPC network mismatch detected after start(); stopping engine.",
+            { expected, actual: info.passphrase },
+          );
+          this.stop();
+          return;
+        }
+      }
+      onVerified();
+    });
   }
 
   async healthCheck(thresholdMs = 5 * 60 * 1000): Promise<HealthCheckResult> {
@@ -996,6 +1035,22 @@ export class EventEngine {
       if (this.sorobanSubscriber) {
         await this.sorobanSubscriber.stop();
       }
+
+      if (this.unifiedController) {
+        this.unifiedController.abort();
+        this.unifiedController = undefined;
+      }
+      if (this.unifiedPollPromise) {
+        try {
+          await this.unifiedPollPromise;
+        } catch (err) {
+          this.log.warn("[pulse-core] unified poller did not shut down cleanly.", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        this.unifiedPollPromise = undefined;
+      }
+      this.unifiedRunning = false;
     }
 
     // Shared regardless of mode: `this.registry`/`this.contractRegistry` hold
@@ -1013,9 +1068,98 @@ export class EventEngine {
   }
 
   /**
+   * Starts the CAP-67 unified event poller (`SorobanRpcClient.pollUnifiedEvents`)
+   * as a first-class transport, alongside Horizon SSE and the Soroban
+   * subscriber. Emits the same `engine.reconnecting` / `engine.rate_limited` /
+   * `engine.reconnected` lifecycle notifications Horizon's stream does, tagged
+   * `source: "unified"`. No-op if already running or unconfigured.
+   *
+   * Decoding, normalizing, and dispatching the polled events to watchers is
+   * not yet wired (see the CAP-67 event taxonomy issues) - for now this only
+   * keeps the transport's lifecycle (start/stop/status/reconnect) consistent
+   * with the other two sources, and tracks `unifiedLastEventAt` for status
+   * reporting.
+   */
+  private startUnifiedPoller(): void {
+    if (!this.unifiedRpc || this.unifiedRunning) return;
+
+    const rpc = this.unifiedRpc;
+    const controller = new AbortController();
+    this.unifiedController = controller;
+    this.unifiedRunning = true;
+
+    this.unifiedPollPromise = this.resolveUnifiedCursor()
+      .then((cursor) =>
+        rpc.pollUnifiedEvents(
+          (events) => {
+            this.unifiedLastEventAt = new Date().toISOString();
+            this.log.debug?.("[pulse-core] unified transport received events", {
+              count: events.length,
+            });
+          },
+          {
+            signal: controller.signal,
+            cursor,
+            onCursor: (nextCursor) => void this.persistUnifiedCursor(nextCursor),
+            onRetry: ({ attempt, delayMs, rateLimited }) => {
+              const type = rateLimited ? "engine.rate_limited" : "engine.reconnecting";
+              this.log.warn(`[pulse-core] unified transport ${type.split(".")[1]}.`, {
+                attempt,
+                delayMs,
+              });
+              this.notifyWatchers(type, {
+                type,
+                attempt,
+                delayMs,
+                source: "unified",
+                emittedAt: new Date().toISOString(),
+              });
+            },
+            onRecovered: ({ attempt }) => {
+              this.log.info("[pulse-core] unified transport reconnect succeeded.", { attempt });
+              this.notifyWatchers("engine.reconnected", {
+                type: "engine.reconnected",
+                attempt,
+                source: "unified",
+                emittedAt: new Date().toISOString(),
+              });
+            },
+          },
+        ),
+      )
+      .finally(() => {
+        this.unifiedRunning = false;
+      });
+  }
+
+  private async resolveUnifiedCursor(): Promise<string | undefined> {
+    if (!this.cursorStore) return undefined;
+    try {
+      return (await this.cursorStore.get(this.unifiedCursorKey)) ?? undefined;
+    } catch (err) {
+      this.log.warn("[pulse-core] cursorStore.get() failed during unified poller startup.", {
+        key: this.unifiedCursorKey,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
+  }
+
+  private async persistUnifiedCursor(cursor: string): Promise<void> {
+    if (!this.cursorStore || this.isCursorStoreUnhealthy) return;
+    try {
+      await this.cursorStore.set(this.unifiedCursorKey, cursor);
+      this.consecutiveCursorFailures = 0;
+      this.isCursorStoreUnhealthy = false;
+    } catch (err) {
+      this.handleCursorFailure(err, this.unifiedCursorKey);
+    }
+  }
+
+  /**
    * Returns the current status of the event engine.
    * Reports top-level aggregated status as well as individual source status
-   * for both Horizon and Soroban subscribers.
+   * for Horizon, the Soroban subscriber, and the CAP-67 unified poller.
    */
   status(): EngineStatus {
     if (this.networkSources) {
@@ -1024,10 +1168,12 @@ export class EventEngine {
       let reconnectAttempt = 0;
       let horizonRunning = false;
       let sorobanRunning = false;
+      let unifiedRunning = false;
       let horizonReconnectAttempt = 0;
       const lastEventAt: string[] = [];
       const horizonLastEventAt: string[] = [];
       const sorobanLastEventAt: string[] = [];
+      const unifiedLastEventAt: string[] = [];
       const pausedSources = new Set<"horizon" | "soroban">();
 
       for (const [network, subEngine] of this.networkSources) {
@@ -1041,6 +1187,7 @@ export class EventEngine {
 
         horizonRunning = horizonRunning || subStatus.sources.horizon.running;
         sorobanRunning = sorobanRunning || subStatus.sources.soroban.running;
+        unifiedRunning = unifiedRunning || subStatus.sources.unified.running;
         horizonReconnectAttempt = Math.max(
           horizonReconnectAttempt,
           subStatus.sources.horizon.reconnectAttempt,
@@ -1050,6 +1197,9 @@ export class EventEngine {
         }
         if (subStatus.sources.soroban.lastEventAt) {
           sorobanLastEventAt.push(subStatus.sources.soroban.lastEventAt);
+        }
+        if (subStatus.sources.unified.lastEventAt) {
+          unifiedLastEventAt.push(subStatus.sources.unified.lastEventAt);
         }
       }
 
@@ -1078,6 +1228,13 @@ export class EventEngine {
               : null,
             reconnectAttempt: 0,
           },
+          unified: {
+            running: unifiedRunning,
+            lastEventAt: unifiedLastEventAt.length
+              ? (unifiedLastEventAt.sort()[unifiedLastEventAt.length - 1] ?? null)
+              : null,
+            reconnectAttempt: 0,
+          },
         },
         networks,
       };
@@ -1096,13 +1253,19 @@ export class EventEngine {
       reconnectAttempt: 0,
     };
 
-    const sources = { horizon, soroban };
-    const lastEventAt = [horizon.lastEventAt, soroban.lastEventAt].filter(
+    const unified = {
+      running: this.unifiedRunning,
+      lastEventAt: this.unifiedLastEventAt,
+      reconnectAttempt: 0,
+    };
+
+    const sources = { horizon, soroban, unified };
+    const lastEventAt = [horizon.lastEventAt, soroban.lastEventAt, unified.lastEventAt].filter(
       (value): value is string => value !== null,
     );
 
     return {
-      running: horizon.running || soroban.running,
+      running: horizon.running || soroban.running || unified.running,
       watcherCount: this.registry.size,
       contractWatcherCount: this.contractRegistry.size,
       lastEventAt: lastEventAt.length ? (lastEventAt.sort()[lastEventAt.length - 1] ?? null) : null,

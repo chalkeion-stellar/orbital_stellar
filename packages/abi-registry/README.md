@@ -73,6 +73,40 @@ const resolver = new ChainedAbiRegistryClient([embeddedSpecReader, registryAttes
 
 An embedded-spec reader's `getSpec` must resolve to `null` for a contract with no embedded spec, not throw - `discoverContractSpec` itself throws `NoEmbeddedSpecError`, so any reader wrapping it for use in a chain is responsible for catching that and returning `null`.
 
+### `signAttestation` / `verifyAttestation`
+
+An attestation (SEP §7.3) claims "this deployed contract emits this event schema." `signAttestation`/`verifyAttestation` are the signature envelope around that claim - who signed the document and whether it's been tampered with since. They don't validate the document's shape or its `events` payload; use `validateAttestationDocument` (or the JSON Schema at `schemas/attestation.schema.json`) for that separately.
+
+```ts
+import { signAttestation, verifyAttestation } from "@orbital-stellar/abi-registry";
+import type { AttestationDocument } from "@orbital-stellar/abi-registry";
+
+const document: AttestationDocument = {
+  contractId: "C...",
+  wasmHash: "…", // hex-encoded SHA-256 of the deployed WASM
+  events: [
+    /* SEP-48-shaped event definitions - see AttestationDocument["events"] */
+  ],
+  attester: attesterKeypair.publicKey(), // G...
+  createdAt: new Date().toISOString(),
+};
+
+const envelope = signAttestation(document, attesterKeypair.secret());
+// envelope: { payload, publicKey, signature }
+
+const verdict = verifyAttestation(envelope, { expectedWasmHash: onChainWasmHash });
+// { status: "valid" } | { status: "invalid", reason: string }
+```
+
+`signAttestation` signs `canonicalizeAttestation(document)` - a deterministic, recursively-key-sorted JSON serialization - with the attester's ed25519 keypair, and refuses to sign if `document.attester` doesn't match the signing key's own address.
+
+`verifyAttestation` checks, in order, short-circuiting on the first failure:
+
+1. `envelope.publicKey` is a well-formed Stellar account address (`G...`).
+2. `envelope.publicKey` matches `envelope.payload.attester` - nobody but the claimed attester can produce a valid envelope for a given document.
+3. `envelope.signature` is a valid ed25519 signature by `envelope.publicKey` over the payload's canonical JSON - this is what catches tampering, since changing even one byte of the payload changes its canonical serialization.
+4. If `options.expectedWasmHash` is given (the caller's own on-chain lookup - this module makes no network calls), it matches `envelope.payload.wasmHash`.
+
 ### `RegistryPublisher`
 
 An interface for publishing registry snapshots or derived ABI artifacts.
@@ -84,6 +118,58 @@ Reference publisher that writes registry output to the local filesystem. Useful 
 ### `jsToScval(value)` / `scvalToJs(value)`
 
 Helpers for converting between JavaScript values and Soroban `ScVal` payloads.
+
+## CLI
+
+### `abi-registry verify <contractId> --schema <file>`
+
+The one-command form of `verifySchema`: reads a submitted schema off disk, compares it against the deployed contract's on-chain spec, and prints the structured verdict.
+
+```bash
+abi-registry verify CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75 \
+  --schema specs/well-known/usdc.json \
+  --network mainnet
+```
+
+```
+✗ mismatch  CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75
+  1 difference(s) between the submitted schema and the on-chain spec:
+
+  - functions[transfer].returns
+      submitted: "void"
+      on-chain:  "u32"
+```
+
+`--schema` accepts either the canonical `ContractSpec` shape or the hand-authored snake_case well-known format, so the bundled specs in `specs/well-known/` can be passed straight through. The file is validated with `validateSpec` before any network call, so a malformed schema fails fast rather than being reported as a mismatch.
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--schema <file>` | *(required)* | Submitted schema to verify |
+| `--rpc-url <url>` | `https://soroban-testnet.stellar.org` | Soroban RPC endpoint |
+| `--network <name>` | `testnet` | `mainnet` \| `testnet` \| `futurenet` |
+| `--json` | `false` | Print the verdict as JSON instead of text |
+| `--allow-unverifiable` | `false` | Exit `0` instead of `2` when the contract has no embedded spec |
+
+`--json` prints the verdict verbatim, plus the contract ID, for machine consumption:
+
+```json
+{
+  "contractId": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+  "status": "mismatch",
+  "diffs": [{ "path": "functions[transfer].returns", "submitted": "void", "onChain": "u32" }]
+}
+```
+
+**Exit codes.** Distinct per outcome, so CI can gate on the specific one it cares about rather than only on "non-zero":
+
+| Code | Meaning |
+| --- | --- |
+| `0` | `match` - submitted schema matches the on-chain spec |
+| `1` | `mismatch` - the schema disagrees with the on-chain spec |
+| `2` | `unverifiable` - contract has no embedded spec, so nothing could be compared (see `--allow-unverifiable`) |
+| `3` | Bad usage, unreadable/invalid schema file, or an RPC failure |
+
+Note that Stellar Asset Contracts (USDC, EURC, AQUA, the native XLM wrapper) have no WASM and therefore no embedded `contractspecv0` section - verifying one reports `unverifiable`, not `mismatch`. Only contracts built from Rust with their spec section intact can be verified.
 
 ## Related documents
 
