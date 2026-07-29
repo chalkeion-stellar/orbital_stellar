@@ -6,7 +6,8 @@ import {
   canonicalizeAttestation,
   AttestationSigningError,
 } from "../src/attestation.js";
-import type { AttestationDocument, AttestationEnvelope } from "../src/attestation.js";
+import type { AttestationEnvelope } from "../src/attestation.js";
+import type { AttestationDocument } from "../src/types.js";
 
 const CONTRACT_ID = "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75";
 const WASM_HASH = "a".repeat(64);
@@ -18,7 +19,13 @@ function makeDocument(
   return {
     contractId: CONTRACT_ID,
     wasmHash: WASM_HASH,
-    schema: { events: [{ name: "transfer", params: [] }] },
+    events: [
+      {
+        name: "transfer",
+        topics: [{ name: "from", type: "address" }],
+        data: [{ name: "amount", type: "i128" }],
+      },
+    ],
     attester,
     createdAt: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -32,7 +39,7 @@ describe("canonicalizeAttestation", () => {
     const b: AttestationDocument = {
       createdAt: a.createdAt,
       attester: a.attester,
-      schema: a.schema,
+      events: a.events,
       wasmHash: a.wasmHash,
       contractId: a.contractId,
     };

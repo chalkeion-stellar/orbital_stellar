@@ -75,7 +75,7 @@ An embedded-spec reader's `getSpec` must resolve to `null` for a contract with n
 
 ### `signAttestation` / `verifyAttestation`
 
-An attestation (SEP §7.3) claims "this deployed contract emits this event schema." These two functions are the signature envelope around that claim: they don't validate the schema payload itself (that's the separate `attestation.schema.json` deliverable), only who signed the document and whether it's been tampered with since.
+An attestation (SEP §7.3) claims "this deployed contract emits this event schema." `signAttestation`/`verifyAttestation` are the signature envelope around that claim - who signed the document and whether it's been tampered with since. They don't validate the document's shape or its `events` payload; use `validateAttestationDocument` (or the JSON Schema at `schemas/attestation.schema.json`) for that separately.
 
 ```ts
 import { signAttestation, verifyAttestation } from "@orbital-stellar/abi-registry";
@@ -84,9 +84,9 @@ import type { AttestationDocument } from "@orbital-stellar/abi-registry";
 const document: AttestationDocument = {
   contractId: "C...",
   wasmHash: "…", // hex-encoded SHA-256 of the deployed WASM
-  schema: {
-    /* SEP-48-shaped event definitions */
-  },
+  events: [
+    /* SEP-48-shaped event definitions - see AttestationDocument["events"] */
+  ],
   attester: attesterKeypair.publicKey(), // G...
   createdAt: new Date().toISOString(),
 };
