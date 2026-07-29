@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- **`abi-registry verify` CLI** - `abi-registry verify <contractId> --schema <file>` wraps `verifySchema()` as one command, printing the structured verdict as text or `--json`. `--schema` accepts the canonical `ContractSpec` shape or the hand-authored well-known format. Exit codes are distinct per outcome so CI can gate on them: `0` match, `1` mismatch, `2` unverifiable (`--allow-unverifiable` to accept it), `3` usage/IO/RPC error.
 - **On-chain registry support** - `OnChainRegistryPublisher` (implements `RegistryPublisher`, publishes specs to the deployed `contracts/registry` Soroban contract) and `OnChainAbiRegistryClient` (resolves specs by reading the registry contract via RPC simulation, verifying the fetched blob's hash against the on-chain `spec_hash`).
 - **WASM auto-discovery** - `discoverContractSpec()` fetches a deployed contract's WASM and parses its embedded `contractspecv0` section into a canonical `ContractSpec`, no human-authored JSON required. Throws `NoEmbeddedSpecError` for non-Rust/stripped contracts and for Stellar Asset Contracts (SACs - which have no WASM at all; verified against a live mainnet USDC lookup).
 - **Default registry resolution** - `createDefaultAbiRegistryClient()` composes `BundledWellKnownClient` (the four bundled well-known specs, works fully offline) with the on-chain registry once deployed (`ChainedAbiRegistryClient`, `ORBITAL_REGISTRY_TESTNET_CONTRACT_ID`). This is now `@orbital-stellar/pulse-core`'s default when `CoreConfig.abiRegistry` is omitted.
