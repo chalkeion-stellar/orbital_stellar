@@ -42,7 +42,11 @@ export {
   toMuxedAddress,
   toContractAddress,
 } from "./address.js";
-export { EngineAlreadyStartedError, HorizonStreamError } from "./errors.js";
+export {
+  EngineAlreadyStartedError,
+  HorizonStreamError,
+  InvalidIngestionModeError,
+} from "./errors.js";
 export { StrKey } from "@stellar/stellar-sdk";
 export { CursorStore } from "./CursorStore.js";
 export type { CursorStoreLike } from "./CursorStore.js";
@@ -105,6 +109,8 @@ export type EngineStatus = {
   lastEventAt: string | null;
   reconnectAttempt: number;
   pausedSources?: ("horizon" | "soroban")[];
+  /** The configured value of `CoreConfig.ingestion` (default `"horizon"`). Routing/auto-resolution behavior itself is a separate concern - see `CoreConfig.ingestion`'s doc. */
+  ingestion: IngestionMode;
   sources: {
     horizon: SourceStatus;
     soroban: SourceStatus;
@@ -618,7 +624,22 @@ export type CoreConfig = {
   abiRegistry?: AbiRegistryClientLike | false;
   /** Soroban RPC configuration. Ignored when `network` is an array - set `soroban` per source instead. */
   soroban?: SorobanConfig;
+  /**
+   * Which event transport to prefer: `"horizon"` (default) preserves
+   * pre-Wave-1.6 behavior exactly - zero change until a consumer opts in.
+   * `"unified"` prefers the CAP-67 unified stream where one exists.
+   * `"auto"` picks between the two based on what the configured Soroban RPC
+   * supports. Throws {@link InvalidIngestionModeError} for any other value.
+   *
+   * This is config surface only - selecting a mode here doesn't yet change
+   * which transport actually delivers which events; that routing behavior
+   * is separate, forthcoming work.
+   */
+  ingestion?: IngestionMode;
 };
+
+/** Valid values for {@link CoreConfig.ingestion}. */
+export type IngestionMode = "unified" | "horizon" | "auto";
 
 /**
  * The event families this package's `NormalizedEvent` taxonomy is grouped

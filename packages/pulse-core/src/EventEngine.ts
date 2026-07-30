@@ -3,7 +3,11 @@ import { createDefaultAbiRegistryClient, decodeContractEvent } from "@orbital-st
 import type { ContractSpec, XdrContractSpec } from "@orbital-stellar/abi-registry";
 import { Watcher } from "./Watcher.js";
 import { fullJitterBackoffMs } from "./backoff.js";
-import { EngineAlreadyStartedError, NetworkMismatchError } from "./errors.js";
+import {
+  EngineAlreadyStartedError,
+  InvalidIngestionModeError,
+  NetworkMismatchError,
+} from "./errors.js";
 import { resolveSorobanPageLimit, SorobanSubscriber } from "./SorobanSubscriber.js";
 import { SorobanRpcClient } from "./SorobanRpcClient.js";
 import type { SorobanNetworkInfo } from "./SorobanRpcClient.js";
@@ -31,6 +35,7 @@ import type {
   DataEventType,
   EngineStatus,
   HealthCheckResult,
+  IngestionMode,
   LiquidityPoolDepositEvent,
   LiquidityPoolReserve,
   LiquidityPoolWithdrawEvent,
@@ -119,6 +124,8 @@ const DEFAULT_RECONNECT: Required<ReconnectConfig> = {
 
 const STELLAR_MAX_TRUSTLINE_LIMIT = "922337203685.4775807";
 
+const VALID_INGESTION_MODES: readonly IngestionMode[] = ["unified", "horizon", "auto"];
+
 const noop: Logger = { info: () => {}, warn: () => {}, error: () => {} };
 
 /**
@@ -184,6 +191,8 @@ export class EventEngine {
   private consecutiveCursorFailures = 0;
   private isCursorStoreUnhealthy = false;
   private pausedSources = new Set<"horizon" | "soroban">();
+  /** The configured value of `CoreConfig.ingestion`. Validated in the constructor. */
+  private ingestion: IngestionMode = "horizon";
   /**
    * Optional live Soroban subscriber. Wired only when the engine is configured
    * for live contract streaming; otherwise undefined, and the guarded calls
@@ -229,6 +238,12 @@ export class EventEngine {
    * @param config - The core configuration for the engine.
    */
   constructor(config: CoreConfig) {
+    const ingestion = config.ingestion ?? "horizon";
+    if (!VALID_INGESTION_MODES.includes(ingestion)) {
+      throw new InvalidIngestionModeError(ingestion);
+    }
+    this.ingestion = ingestion;
+
     this.sorobanPageLimit = resolveSorobanPageLimit(config.soroban?.pageLimit);
 
     if (Array.isArray(config.network)) {
@@ -395,6 +410,7 @@ export class EventEngine {
         cursorFailureThreshold: config.cursorFailureThreshold,
         abiRegistry: config.abiRegistry,
         streamKey: config.streamKey ? `${config.streamKey}:${source.network}` : undefined,
+        ingestion: config.ingestion,
       });
       networkSources.set(source.network, subEngine);
     }
@@ -1196,6 +1212,7 @@ export class EventEngine {
           : null,
         reconnectAttempt,
         pausedSources: pausedSources.size > 0 ? Array.from(pausedSources) : undefined,
+        ingestion: this.ingestion,
         sources: {
           horizon: {
             running: horizonRunning,
@@ -1254,6 +1271,7 @@ export class EventEngine {
       lastEventAt: lastEventAt.length ? (lastEventAt.sort()[lastEventAt.length - 1] ?? null) : null,
       reconnectAttempt: Math.max(horizon.reconnectAttempt, soroban.reconnectAttempt),
       pausedSources: this.pausedSources.size > 0 ? Array.from(this.pausedSources) : undefined,
+      ingestion: this.ingestion,
       sources,
     };
   }
