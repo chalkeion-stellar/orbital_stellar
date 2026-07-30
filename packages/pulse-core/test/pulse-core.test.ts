@@ -2259,6 +2259,10 @@ describe("pulse-core EventEngine", () => {
             const _raw = event.raw;
             break;
           }
+          case "fee.incurred": {
+            const _raw = event.raw;
+            break;
+          }
           case "contract.emitted": {
             const _raw = event.raw;
             break;

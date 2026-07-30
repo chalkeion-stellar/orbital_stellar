@@ -289,6 +289,11 @@ function assertNarrowedAddresses(event: NormalizedEvent): string {
       return from;
     }
 
+    case "fee.incurred": {
+      const from: AccountAddress | MuxedAddress = event.from;
+      return from;
+    }
+
     case "contract.invoked": {
       const contractId: ContractAddress = event.contractId;
       return contractId;

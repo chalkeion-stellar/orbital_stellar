@@ -51,6 +51,7 @@ export function assertExhaustive(event: NormalizedEvent): string {
     case "lp.deposited":
     case "lp.withdrawn":
     case "asset.clawback":
+    case "fee.incurred":
     case "contract.invoked":
     case "contract.emitted":
       return event.type;
@@ -112,6 +113,7 @@ export function assertExhaustiveNoDefault(event: NormalizedEvent): string {
     case "lp.deposited":
     case "lp.withdrawn":
     case "asset.clawback":
+    case "fee.incurred":
     case "contract.invoked":
     case "contract.emitted":
       return event.type;

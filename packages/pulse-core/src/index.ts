@@ -141,6 +141,13 @@ export type TrustAuthEventType = "trustline.authorized" | "trustline.deauthorize
  * shape.
  */
 export type AssetClawbackEventType = "asset.clawback";
+/**
+ * Event type for a CAP-67 unified-stream `fee` event. New in CAP-67 - no
+ * Horizon-derived equivalent exists in this package's current taxonomy
+ * (fees were previously only derivable implicitly from transaction
+ * metadata, not modeled as a discrete event).
+ */
+export type FeeIncurredEventType = "fee.incurred";
 /** Event type for account creation. */
 export type AccountEventType = "account.created";
 export type ClaimableCreatedEventType = "claimable.created";
@@ -430,6 +437,26 @@ export type AssetClawbackEvent = {
 };
 
 /**
+ * A normalized CAP-67 unified-stream `fee` event: a classic transaction's
+ * network fee, now emitted as a discrete event. New in CAP-67 - no
+ * Horizon-derived equivalent exists in this package's current taxonomy.
+ */
+export type FeeIncurredEvent = {
+  /** The type of fee event. */
+  type: FeeIncurredEventType;
+  /** The account, muxed account, or contract that paid the fee. */
+  from: AccountAddress | MuxedAddress;
+  /** The fee amount (always native XLM). */
+  amount: StellarAmount;
+  /** ISO 8601 timestamp of the fee event. */
+  timestamp: string;
+  /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
+  readonly timestampDate: Date;
+  /** The original raw record from the unified Soroban event stream. */
+  raw?: RawSorobanEvent;
+};
+
+/**
  * A union of all normalized events supported by pulse-core.
  *
  * This is the broad catch-all type. For precise type narrowing and better
@@ -464,6 +491,7 @@ export type NormalizedEvent = (
   | LiquidityPoolWithdrawEvent
   | TrustAuthEvent
   | AssetClawbackEvent
+  | FeeIncurredEvent
   | ContractEvent
 ) & {
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
