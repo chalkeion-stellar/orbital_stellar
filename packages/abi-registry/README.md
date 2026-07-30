@@ -119,6 +119,57 @@ Reference publisher that writes registry output to the local filesystem. Useful 
 
 Helpers for converting between JavaScript values and Soroban `ScVal` payloads.
 
+## Semantic taxonomy
+
+The semantic layer maps a contract's raw event topics onto a human-readable, dot-namespaced name (`swap.executed`, `payment.sent`, `loan.liquidated`) and publishes the result as open data. [`schema/taxonomy.schema.json`](./schema/taxonomy.schema.json) is the normative format a community submission must conform to; the naming and collision rules live in that file's `description` fields, so the schema is self-contained for a submitter who has nothing else.
+
+A taxonomy entry answers four questions and nothing else:
+
+| Field | Question |
+| --- | --- |
+| `match` | Which raw events does this apply to? A positional topic pattern. |
+| `scope` | Which contracts? Specific contract IDs, specific WASM hashes, or every contract implementing a SEP interface. |
+| `name` | What is the event called, semantically? |
+| `parameters` | Where does each taxonomy parameter come from - a topic slot, a data key, or a constant? |
+
+plus `provenance` - who submitted it, when, and the sources backing the claim. Matching and extraction are deliberately separate: `match` only decides whether an entry applies, so a pattern can be tightened without silently re-binding a parameter.
+
+Two worked examples ship under [`schema/examples/taxonomy/`](./schema/examples/taxonomy): a SEP-41 `transfer` mapped to `payment.sent` (interface-scoped), and an illustrative DEX swap (contract-scoped, map-shaped data).
+
+### Naming rules
+
+- **Shape** - two or three dot-separated segments: `<root>.<action>` or `<root>.<subject>.<action>`.
+- **Casing** - lowercase ASCII `snake_case` per segment, starting with a letter.
+- **Root** - the first segment must come from a closed list: `account`, `asset`, `bridge`, `claimable`, `contract`, `data`, `governance`, `loan`, `lp`, `nft`, `offer`, `oracle`, `payment`, `stake`, `swap`, `trustline`, `vault`. The list is closed on purpose - an open-ended root lets two submissions describe one concept under different names (`swap.executed` vs `dex.swapped`), which is exactly what a shared taxonomy exists to prevent. Adding a root is a reviewed schema change, not a per-submission decision.
+- **Reuse over minting** - several roots already carry meaning in `@orbital-stellar/pulse-core`'s `NormalizedEvent` taxonomy. A contract-event mapping that means the same thing as `payment.sent` must use that name.
+- **Reserved** - `engine.*` and `event.*` are permanently unavailable. They are `pulse-core`'s own diagnostics (`engine.reconnecting`, `event.decode_failed`), which describe the indexer rather than the chain.
+- **Action segment** - past tense (`executed`, `liquidated`, `deposited`). A review convention, not machine-checkable.
+
+### Collision policy
+
+A taxonomy name is **not** unique across entries - `payment.sent` legitimately has one entry per token implementation. Uniqueness is a property of *(pattern, scope)*:
+
+- `duplicate-id` - two entries share an `id`.
+- `ambiguous-mapping` - identical patterns in overlapping scopes resolve to **different** names. This is the failure that makes consumers untrustworthy.
+- `duplicate-mapping` - identical patterns in overlapping scopes resolve to the **same** name. Harmless to consumers, but the redundant entry should be dropped.
+
+Listing the other entry in `supersedes` marks the overlap as intentional and clears it. Scopes of *different* kinds are never compared automatically: deciding whether a contract ID is also covered by a `wasmHash` or SEP-interface scope needs on-chain state this package does not read, so that one is a reviewer's call.
+
+### `validateTaxonomyEntry` / `findTaxonomyConflicts`
+
+```ts
+import { validateTaxonomyEntry, findTaxonomyConflicts } from "@orbital-stellar/abi-registry";
+
+const result = validateTaxonomyEntry(JSON.parse(submission));
+// { valid: true } | { valid: false, errors: string[] }
+
+const conflicts = findTaxonomyConflicts([...published, candidate]);
+// [{ kind: "ambiguous-mapping", entryIds: ["a", "b"], detail: "…" }]
+```
+
+`validateTaxonomyEntry` is the same rule set as the JSON Schema, hand-written so runtime consumers don't need a JSON Schema validator, and held in step with it by tests rather than by generation. One deliberate difference: the schema is `additionalProperties: false` throughout, while the function ignores unknown properties (matching `validateSpec`). Gate reviews on the schema; validate at runtime with the function.
+
+`findTaxonomyConflicts` implements the machine-checkable half of the collision policy. It collects every conflict rather than stopping at the first, so a reviewer sees the whole picture in one pass.
 ## CLI
 
 ### `abi-registry verify <contractId> --schema <file>`

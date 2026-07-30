@@ -77,6 +77,25 @@ export type {
 } from "./verifySchema.js";
 
 export {
+  validateTaxonomyEntry,
+  findTaxonomyConflicts,
+  TAXONOMY_NAMESPACE_ROOTS,
+  RESERVED_TAXONOMY_NAMESPACE_ROOTS,
+  TAXONOMY_NAME_RE,
+} from "./taxonomy.js";
+export type {
+  TaxonomyEntry,
+  TaxonomyMatch,
+  TaxonomyScope,
+  TaxonomyProvenance,
+  TaxonomyConflict,
+  TaxonomyNamespaceRoot,
+  TaxonomyNetwork,
+  TopicMatcher,
+  ParameterMapping,
+} from "./taxonomy.js";
+
+export {
   signAttestation,
   verifyAttestation,
   canonicalizeAttestation,
