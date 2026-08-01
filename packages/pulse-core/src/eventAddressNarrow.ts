@@ -38,6 +38,8 @@ export function describeEvent(event: NormalizedEvent): string {
       return `Trust ${event.type} between ${event.trustor} and ${event.issuer}`;
     case "asset.clawback":
       return `Clawback from ${event.from}`;
+    case "fee.incurred":
+      return `Fee incurred by ${event.from}`;
     case "contract.invoked":
       return `Contract invoked ${event.contractId}`;
     case "contract.emitted":

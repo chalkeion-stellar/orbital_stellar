@@ -1,8 +1,8 @@
 /**
- * Shared helpers for mapping decoded CAP-67 mint/burn/clawback structs onto
- * `NormalizedEvent` taxonomy shapes.
+ * Shared helpers for mapping decoded CAP-67 mint/burn/clawback/set_authorized
+ * structs onto `NormalizedEvent` taxonomy shapes.
  */
-import { isContractAddress, toAccountAddress } from "../address.js";
+import { isAccountAddress, isContractAddress, toAccountAddress } from "../address.js";
 import type { AccountAddress, MuxedAddress, StellarAddress } from "../address.js";
 
 /**
@@ -36,4 +36,23 @@ export function toPaymentAddress(
     );
   }
   return address as AccountAddress | MuxedAddress;
+}
+
+/**
+ * Narrows a decoded `StellarAddress` to strictly `AccountAddress`. Throws for
+ * a muxed or contract address - `TrustAuthEvent.trustor`/`.issuer` are
+ * `AccountAddress`-only, matching Horizon's own `allow_trust`/
+ * `set_trust_line_flags` normalization, since a trustline is always owned by
+ * a plain account.
+ */
+export function toAccountOnlyAddress(
+  address: StellarAddress,
+  makeError: (reason: string) => Error,
+): AccountAddress {
+  if (!isAccountAddress(address)) {
+    throw makeError(
+      `address "${address}" is not a plain account address, which this taxonomy event requires`,
+    );
+  }
+  return address;
 }
