@@ -362,7 +362,7 @@ export type TrustAuthEvent = {
   timestamp: string;
   /** Lazy, cached `Date` derived from `event.timestamp`. Non-enumerable; does not appear in JSON.stringify output. */
   readonly timestampDate: Date;
-  /** The original Horizon operation type ("allow_trust" or "set_trust_line_flags"). */
+  /** The originating operation type: "allow_trust" or "set_trust_line_flags" from Horizon, or "set_authorized" from the CAP-67 unified stream. */
   operation: string;
   raw?: RawHorizonAllowTrust | RawHorizonSetTrustLineFlags;
 };
@@ -456,7 +456,7 @@ export type AssetClawbackEvent = {
 export type FeeIncurredEvent = {
   /** The type of fee event. */
   type: FeeIncurredEventType;
-  /** The account, muxed account, or contract that paid the fee. */
+  /** The account or muxed account that paid the fee. Contract payers are rejected during normalization. */
   from: AccountAddress | MuxedAddress;
   /** The fee amount (always native XLM). */
   amount: StellarAmount;
